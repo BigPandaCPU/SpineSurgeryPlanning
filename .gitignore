@@ -1,2 +1,8 @@
 /code/build/
 /code/pointnet/checkpoints/
+.idea
+/code/__pycache__
+/code/pointnet/__pycache__
+
+/Release_CPU/
+/Release_GPU/

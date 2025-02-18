@@ -13,12 +13,12 @@ normal = False
 
 model_dir = "./"
 model = MODEL.get_model(num_class)
-model = model.to("cpu")
+model = model.to("cuda")
 model.eval()
 
 with torch.no_grad():
 
-    checkpoint = torch.load(model_dir + 'checkpoints/best_model.pth',  map_location=torch.device('cpu'))
+    checkpoint = torch.load(model_dir + 'checkpoints/best_model.pth',  map_location=torch.device('cuda'))
     model.load_state_dict(checkpoint['model_state_dict'])
 
     data = np.loadtxt("./0001_label_22.txt")[:, 0:3]
@@ -28,9 +28,9 @@ with torch.no_grad():
     #x = torch.rand(1, 3, point_num)
 
     x = torch.from_numpy(data)
-    x = x.to(torch.float32)
+    x = x.to(torch.float32).to(device="cuda")
 
 
-    export_onnx_file = os.path.join(model_dir, "checkpoints/best_model.onnx")
+    export_onnx_file = os.path.join(model_dir, "checkpoints/best_model_gpu.onnx")
     torch.onnx.export(model, x, export_onnx_file, opset_version=11)
 

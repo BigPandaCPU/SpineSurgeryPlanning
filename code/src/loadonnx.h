@@ -1,7 +1,7 @@
 #pragma once
 #include <vector>
 
-void pc_normalize(std::vector<float>& points);
-std::vector<int> classfier(std::vector<float>& points);
-const int point_num = 5000;
-const int class_num = 4;
+std::vector<float> pointCloudNormalize(const std::vector<float>& points);
+std::vector<int> classfier(std::vector<float>& points, bool use_cuda = false);
+const int POINT_NUM = 5000;
+const int CLASS_NUM = 4;
