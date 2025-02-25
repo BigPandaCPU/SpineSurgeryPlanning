@@ -30,7 +30,7 @@
 #include <stdexcept>
 
 #define PI 3.1415926
-#define TwoCentersDistanceThreshold 3.0
+#define TwoCentersDistanceThreshold 4.0
 
 enum SPINE_POINT_LABEL {TOP=1, LEFT=2, RIGHT=3};
 
@@ -95,7 +95,7 @@ std::vector<vtkSmartPointer<vtkActor>> createAxisActors(const std::vector<float>
 void getTheMinCutPlaneArea(float& cut_plane_area_min, std::vector<float>& bound_points_min, std::vector<std::vector<float>>& rotate_matrix_min, 
 	std::vector<float>& center_min, const std::vector<float>& rotate_normal, const std::vector<float>& target_normal, 
 	const std::vector<float>& target_center, vtkSmartPointer<vtkPolyData> target_poly_data, 
-	float max_rotate_angle=45.0, float dis_threshold=5.0);
+	float max_rotate_angle=60.0, float dis_threshold=5.0);
 
 std::vector<std::vector<float>> createRotateMatrixAroundNormal(const std::vector<float>& rotate_normal, float rotate_angle=0.0);
 //Eigen::Matrix3f createRotateMatrixAroundNormal2(Eigen::Vector3f normal, float angle);

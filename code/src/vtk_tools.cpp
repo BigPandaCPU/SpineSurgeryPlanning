@@ -1579,7 +1579,7 @@ void pedicleSurgeryPlanning(std::vector<float>& top_points, std::vector<float>& 
 	std::cout << "cal left angle:" << left_angle << std::endl;
 	if (left_angle < rot_angle) {left_angle = rot_angle;}
 
-	right_angle = getAngleOfCutPlaneNormalAndSpineAxisNormalX(right_cut_plane_center, left_cut_plane_normal,
+	right_angle = getAngleOfCutPlaneNormalAndSpineAxisNormalX(right_cut_plane_center, right_cut_plane_normal,
 		spine_axis_center, spine_axis_normalZ, spine_axis_normalX);
 	std::cout << "cal right angle:" << right_angle << std::endl;
 
