@@ -1013,7 +1013,13 @@ void getTheClosedTwoPoints(std::vector<float>& point0, std::vector<float>& point
 	for (int i = 0; i < all_points.size(); i++)
 	{
 		auto cur_dis = all_dis[i];
-		if (cur_dis > min_dis && cur_dis < sec_min_dis)
+		auto p0 = all_points[min_index];
+		auto p1 = all_points[i];
+		std::vector<float> p0_normal = { float(p0[0] - source_point[0]), float(p0[1] - source_point[1]), float(p0[2] - source_point[2]) };
+		std::vector<float> p1_normal = { float(p1[0] - source_point[0]), float(p1[1] - source_point[1]), float(p1[2] - source_point[2]) };
+		auto dot_value = getTwoVectorDotValue(p0_normal, p1_normal);
+
+		if (cur_dis > min_dis && cur_dis < sec_min_dis && dot_value < 0.0)
 		{
 			sec_min_dis = cur_dis;
 			sec_min_index = i;
