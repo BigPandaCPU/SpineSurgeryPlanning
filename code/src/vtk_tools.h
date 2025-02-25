@@ -31,6 +31,8 @@
 
 #define PI 3.1415926
 #define TwoCentersDistanceThreshold 4.0
+#define CrossAngleThreshold 60.0  //切面法向与参考法向之间的夹角阈值
+#define SearchRotateAngle 60.0    //最小截面搜索的时候，搜索的角度范围-SearchRotateAngle ~ SearchRotateAngle
 
 enum SPINE_POINT_LABEL {TOP=1, LEFT=2, RIGHT=3};
 

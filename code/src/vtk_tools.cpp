@@ -766,7 +766,7 @@ void getTheMinCutPlaneArea(float& cut_plane_area_min, std::vector<float>& bound_
 	std::vector<std::vector<float>> bound_points;
 	std::vector<std::vector<float>> centers;
 
-	for (int i = int(-max_rotate_angle); i< int(max_rotate_angle); i += 3)
+	for (int i = int(-max_rotate_angle); i< int(max_rotate_angle); i += 4)
 	{
 		float cur_rotate_angle = i;
 		std::vector<std::vector<float>> cur_rotate_matrix = createRotateMatrixAroundNormal(rotate_normal, cur_rotate_angle);
@@ -1227,7 +1227,7 @@ void pedicleSurgeryPlanning(std::vector<float>& top_points, std::vector<float>& 
 		left_cut_plane_normal = left_fit_plane_normal;
 	}
 	float left_angle = calculateAngle(left_reference_normal, left_cut_plane_normal);
-	if (left_angle > 45.0)
+	if (left_angle > CrossAngleThreshold)
 	{
 		left_cut_plane_normal = left_reference_normal;
 	}
@@ -1251,7 +1251,7 @@ void pedicleSurgeryPlanning(std::vector<float>& top_points, std::vector<float>& 
 		right_cut_plane_normal = right_fit_plane_normal;
 	}
 	float right_angle = calculateAngle(right_reference_normal, right_cut_plane_normal);
-	if (right_angle > 45.0)
+	if (right_angle > CrossAngleThreshold)
 	{
 		right_cut_plane_normal = right_reference_normal;
 	}
@@ -1317,7 +1317,7 @@ void pedicleSurgeryPlanning(std::vector<float>& top_points, std::vector<float>& 
 	std::vector<float> left_center_min1;
 
 	getTheMinCutPlaneArea(left_cut_plane_area_min1, left_bound_points_min1, left_rotate_matrix_min1, left_center_min1,
-		left_axis_normalX, left_axis_normalY, left_cut_plane_center, spine_poly_data, 45.0, TwoCentersDistanceThreshold);
+		left_axis_normalX, left_axis_normalY, left_cut_plane_center, spine_poly_data, SearchRotateAngle, TwoCentersDistanceThreshold);
 
 
 	if (left_bound_points_min1.size() > 0)
@@ -1334,7 +1334,7 @@ void pedicleSurgeryPlanning(std::vector<float>& top_points, std::vector<float>& 
 	std::vector<float> right_center_min1;
 
 	getTheMinCutPlaneArea(right_cut_plane_area_min1, right_bound_points_min1, right_rotate_matrix_min1, right_center_min1,
-		right_axis_normalX, right_axis_normalY, right_cut_plane_center, spine_poly_data, 45.0, TwoCentersDistanceThreshold);
+		right_axis_normalX, right_axis_normalY, right_cut_plane_center, spine_poly_data, SearchRotateAngle, TwoCentersDistanceThreshold);
 
 
 	if (right_bound_points_min1.size() > 0)
@@ -1385,7 +1385,7 @@ void pedicleSurgeryPlanning(std::vector<float>& top_points, std::vector<float>& 
 	std::vector<float> left_center_min2;
 
 	getTheMinCutPlaneArea(left_cut_plane_area_min2, left_bound_points_min2, left_rotate_matrix_min2, left_center_min2,
-		left_axis_normalZ_new, left_axis_normalY, left_cut_plane_center, spine_poly_data, 45.0, TwoCentersDistanceThreshold);
+		left_axis_normalZ_new, left_axis_normalY, left_cut_plane_center, spine_poly_data, SearchRotateAngle, TwoCentersDistanceThreshold);
 
 
 	if (left_bound_points_min2.size() > 0)
@@ -1402,7 +1402,7 @@ void pedicleSurgeryPlanning(std::vector<float>& top_points, std::vector<float>& 
 	std::vector<float> right_center_min2;
 
 	getTheMinCutPlaneArea(right_cut_plane_area_min2, right_bound_points_min2, right_rotate_matrix_min2, right_center_min2,
-		right_axis_normalZ_new, right_axis_normalY_new, right_cut_plane_center, spine_poly_data, 45.0, TwoCentersDistanceThreshold);
+		right_axis_normalZ_new, right_axis_normalY_new, right_cut_plane_center, spine_poly_data, SearchRotateAngle, TwoCentersDistanceThreshold);
 
 
 	if (right_bound_points_min2.size() > 0)
@@ -1588,17 +1588,17 @@ void pedicleSurgeryPlanning(std::vector<float>& top_points, std::vector<float>& 
 	auto pedicle_pipeline_L_normal = createPediclePipelineNormal(left_angle, spine_axis_normalX, spine_axis_normalY, spine_axis_normalZ);
 	auto pedicle_pipeline_R_normal = createPediclePipelineNormal(-right_angle, spine_axis_normalX, spine_axis_normalY, spine_axis_normalZ);
 
-	std::vector<float> left_point0 = { float(left_cut_plane_center[0] - 30.0*pedicle_pipeline_L_normal[0]),
-		float(left_cut_plane_center[1] - 30.0*pedicle_pipeline_L_normal[1]),
-		float(left_cut_plane_center[2] - 30.0*pedicle_pipeline_L_normal[2]) };
+	std::vector<float> left_point0 = { float(left_cut_plane_center[0] - 50.0*pedicle_pipeline_L_normal[0]),
+		float(left_cut_plane_center[1] - 50.0*pedicle_pipeline_L_normal[1]),
+		float(left_cut_plane_center[2] - 50.0*pedicle_pipeline_L_normal[2]) };
 	std::vector<float> left_point1 = { float(left_cut_plane_center[0] + 70.0*pedicle_pipeline_L_normal[0]),
 	float(left_cut_plane_center[1] + 70.0*pedicle_pipeline_L_normal[1]),
 	float(left_cut_plane_center[2] + 70.0*pedicle_pipeline_L_normal[2]) };
 	auto pedicle_pipeline_actor_L = createLineActorByPoints(left_point0, left_point1, 4.0, "magenta");
 
-	std::vector<float> right_point0 = { float(right_cut_plane_center[0] - 30.0*pedicle_pipeline_R_normal[0]),
-		float(right_cut_plane_center[1] - 30.0*pedicle_pipeline_R_normal[1]),
-		float(right_cut_plane_center[2] - 30.0*pedicle_pipeline_R_normal[2]) };
+	std::vector<float> right_point0 = { float(right_cut_plane_center[0] - 50.0*pedicle_pipeline_R_normal[0]),
+		float(right_cut_plane_center[1] - 50.0*pedicle_pipeline_R_normal[1]),
+		float(right_cut_plane_center[2] - 50.0*pedicle_pipeline_R_normal[2]) };
 
 	std::vector<float> right_point1 = { float(right_cut_plane_center[0] + 70.0*pedicle_pipeline_R_normal[0]),
 		float(right_cut_plane_center[1] + 70.0*pedicle_pipeline_R_normal[1]),
