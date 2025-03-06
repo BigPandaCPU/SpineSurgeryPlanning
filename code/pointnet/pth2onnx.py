@@ -3,8 +3,13 @@ import os.path
 
 import torch
 import numpy as np
-import pointnet_part_seg as MODEL
-from pointnet_utils import  pc_normalize
+
+version = "v1"
+if version == "v2":
+    import pointnet2_part_seg_msg as MODEL
+else:
+    import pointnet_part_seg as MODEL
+from pointnet_utils import pc_normalize
 
 
 point_num = 5000
@@ -18,7 +23,11 @@ model.eval()
 
 with torch.no_grad():
 
-    checkpoint = torch.load(model_dir + 'checkpoints/best_model.pth',  map_location=torch.device('cuda'))
+    if version == "v1":
+        checkpoint = torch.load(model_dir + 'checkpoints_v1/2025_02_28/best_model.pth',  map_location=torch.device('cuda'))
+    else:
+        checkpoint = torch.load(model_dir + 'checkpoints_v2/best_model.pth', map_location=torch.device('cuda'))
+
     model.load_state_dict(checkpoint['model_state_dict'])
 
     data = np.loadtxt("./0001_label_22.txt")[:, 0:3]
@@ -30,7 +39,9 @@ with torch.no_grad():
     x = torch.from_numpy(data)
     x = x.to(torch.float32).to(device="cuda")
 
-
-    export_onnx_file = os.path.join(model_dir, "checkpoints/best_model_gpu.onnx")
+    if version == "v1":
+        export_onnx_file = os.path.join(model_dir, "checkpoints_v1/2025_02_28/best_model_gpu.onnx")
+    else:
+        export_onnx_file = os.path.join(model_dir, "checkpoints_v2/best_model_gpu_v2.onnx")
     torch.onnx.export(model, x, export_onnx_file, opset_version=11)
 

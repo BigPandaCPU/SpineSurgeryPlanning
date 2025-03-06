@@ -1,6 +1,9 @@
 # 将pytorch的.pth文件转换成 onnx文件
 
 ## 将PointNet++的模型文件转成onnx的时候出错
+    
+    导出失败
+![image](png/pointnet22onnx_error.png)
 
 ## 将PointNet的模型文件转成onnx，成功了
 
@@ -11,3 +14,6 @@
     CPU下，单个椎体规划用时20s左右，包含生成actor及保存图片
     
 ![image](./png/01.png)
+
+## 导出模型文件,运行下面脚本
+    python pth2onnx.py
