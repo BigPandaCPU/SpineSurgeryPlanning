@@ -30,9 +30,13 @@
 #include <stdexcept>
 
 #define PI 3.1415926
-#define TwoCentersDistanceThreshold 4.0
+#define TwoCentersDistanceThreshold 5.0
 #define CrossAngleThreshold 60.0  //切面法向与参考法向之间的夹角阈值
 #define SearchRotateAngle 60.0    //最小截面搜索的时候，搜索的角度范围-SearchRotateAngle ~ SearchRotateAngle
+#define CutPlaneAreaThreshold 10.0 //椎弓根通道最小截面的面积阈值 10mm^2
+#define CutBoundPointsThreshold 20 //椎弓根通道截面的交点个数的阈值 20个
+#define SearchAlongAxisYStep 5.0   //沿着切面法向法向最小截面搜索的最大范围，默认与TwoCenterDistanceThreshold相等
+#define PolyDataDownSampleNumPolyThreshold 50000 //对spine poly 进行降采样，当poly的个数超过50000的时候进行处理
 
 enum SPINE_POINT_LABEL {TOP=1, LEFT=2, RIGHT=3};
 
@@ -97,13 +101,15 @@ std::vector<vtkSmartPointer<vtkActor>> createAxisActors(const std::vector<float>
 void getTheMinCutPlaneArea(float& cut_plane_area_min, std::vector<float>& bound_points_min, std::vector<std::vector<float>>& rotate_matrix_min, 
 	std::vector<float>& center_min, const std::vector<float>& rotate_normal, const std::vector<float>& target_normal, 
 	const std::vector<float>& target_center, vtkSmartPointer<vtkPolyData> target_poly_data, 
-	float max_rotate_angle=60.0, float dis_threshold=5.0);
+	float max_rotate_angle= SearchRotateAngle, float dis_threshold= TwoCentersDistanceThreshold, 
+	float area_threshold= CutPlaneAreaThreshold, int bound_points_threshold=CutBoundPointsThreshold);
 
 std::vector<std::vector<float>> createRotateMatrixAroundNormal(const std::vector<float>& rotate_normal, float rotate_angle=0.0);
 //Eigen::Matrix3f createRotateMatrixAroundNormal2(Eigen::Vector3f normal, float angle);
 std::vector<float> getVectorDotMatrixValue(const std::vector<float>& normal, const std::vector<std::vector<float>>& rotate_matrix);
 void getTheMinCutPlaneAreaAlongAxisY(float& cut_plane_min_area, std::vector<float>& bound_points_min, std::vector<float>& center_min,
-	const std::vector<float>& target_center, const std::vector<float>& target_normal, vtkSmartPointer<vtkPolyData> target_poly_data, float max_step = 5.0);
+	const std::vector<float>& target_center, const std::vector<float>& target_normal, vtkSmartPointer<vtkPolyData> target_poly_data, 
+	float max_step = SearchAlongAxisYStep);
 
 std::vector<float> createPediclePipelineNormal(float rotate_angle, const std::vector<float>& axis_normalX, 
 	const std::vector<float>& aixs_normalY, const std::vector<float>& axis_normalZ);

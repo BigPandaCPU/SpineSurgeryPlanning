@@ -11,6 +11,7 @@
 #include <vtkOBBTree.h>
 #include <vtkLineSource.h>
 #include <vtkTubeFilter.h>
+#include <vtkDecimatePro.h>
 #include <vtkWindowToImageFilter.h>
 #include <vtkCamera.h>
 #include <vtkPNGWriter.h>
@@ -243,8 +244,27 @@ vtkSmartPointer<vtkPolyData> createPolyDataFromSTL(const std::string& stl_file)
 	}
 	// 获取多边形数据
 	vtkSmartPointer<vtkPolyData> poly_data = reader->GetOutput();
+	std::cout << "There are " << poly_data->GetNumberOfPoints() << " points." << std::endl;
+	std::cout << "There are " << poly_data->GetNumberOfPolys() << " polygons." << std::endl;
+	auto num_polys = poly_data->GetNumberOfPolys();
 
+	if (num_polys > PolyDataDownSampleNumPolyThreshold)
+	{
+		clock_t start = clock();
+		double reduction = 1.0 - double(PolyDataDownSampleNumPolyThreshold) / double(num_polys);
+		auto decimate = vtkSmartPointer<vtkDecimatePro>::New();
+		decimate->SetInputData(poly_data);
+		decimate->SetTargetReduction(reduction);
+		decimate->PreserveTopologyOn();
+		decimate->Update();
+
+		poly_data = decimate->GetOutput();
+		clock_t end = clock();
+		double duration = double(end - start) / CLOCKS_PER_SEC;
+		std::cout << "Down sample stl used " << duration << std::endl;
+	}
 	return poly_data;
+
 }
 
 vtkSmartPointer<vtkActor> createActorFromPolyData(vtkSmartPointer<vtkPolyData> polydata, const vtkStdString &color, double opacity)
@@ -637,9 +657,12 @@ void getClipedCenterPoints(std::vector<float>& bound_points, std::vector<float>&
 			min_index = i;
 		}
 	}
-	bound_points = all_line_points[min_index];
-	center_new = all_line_centers[min_index];
-	cut_plane_area = all_line_areas[min_index];
+	if (all_line_points.size() > 0)
+	{
+		bound_points = all_line_points[min_index];
+		center_new = all_line_centers[min_index];
+		cut_plane_area = all_line_areas[min_index];
+	}
 }
 
 
@@ -750,7 +773,8 @@ std::vector<vtkSmartPointer<vtkActor>> createAxisActors(const std::vector<float>
 
 void getTheMinCutPlaneArea(float& cut_plane_area_min, std::vector<float>& bound_points_min, std::vector<std::vector<float>>& rotate_matrix_min,
 	std::vector<float>& center_min, const std::vector<float>& rotate_normal, const std::vector<float>& target_normal, 
-	const std::vector<float>& target_center, vtkSmartPointer<vtkPolyData> target_poly_data, float max_rotate_angle, float dis_threshold)
+	const std::vector<float>& target_center, vtkSmartPointer<vtkPolyData> target_poly_data, float max_rotate_angle,
+	float dis_threshold, float area_threshold, int bound_points_threshold) 
 {
 	/*
 		func:对切面绕着某一轴在一定范围内旋转，计算最小的那个截面。旋转向量target_normal绕着旋转轴rotate_normal旋转
@@ -779,8 +803,9 @@ void getTheMinCutPlaneArea(float& cut_plane_area_min, std::vector<float>& bound_
 			target_center, target_normal_new, target_poly_data);
 
 		if (getDistanceOfTwoPoints(cur_fit_center_point, target_center) > dis_threshold) { continue; }
+		if (cur_bound_points.size() < bound_points_threshold * 3) { continue; }
+		if (cur_cut_plane_area < area_threshold) { continue; }
 
-		if (cur_bound_points.size() < 10 * 3) { continue; }
 
 		rotate_matrixs.push_back(cur_rotate_matrix);
 		cut_plane_areas.push_back(cur_cut_plane_area);
@@ -893,11 +918,12 @@ void getTheMinCutPlaneAreaAlongAxisY(float& cut_plane_area_min, std::vector<floa
 		std::vector<float> cur_center_new;
 		float cur_cut_plane_area = 0.0;
 		getClipedCenterPoints(cur_bound_points, cur_center_new, cur_cut_plane_area, cur_center, target_normal, target_poly_data);
+		cur_step += 0.5; //每个0.5mm递增
+
 		if (cur_bound_points.size() < 10 * 3) { continue; }
 		all_cut_plane_areas.push_back(cur_cut_plane_area);
 		all_bound_points.push_back(cur_bound_points);
 		all_centers.push_back(cur_center_new);
-		cur_step += 0.5; //每个0.5mm递增
 	}
 
 	float min_area = 99999.0;
@@ -1536,11 +1562,21 @@ void pedicleSurgeryPlanning(std::vector<float>& top_points, std::vector<float>& 
 	top_fit_plane_actor = fitPlaneActorFromPoints(top_fit_plane_center, top_fit_plane_normal, top_points, "Red");
 
 	std::vector<float> spine_axis_normalZ;
-	if (getTwoVectorDotValue(top_fit_plane_normal, left_axis_normalZ_new2) < 0.0f)
+	std::vector<float> left_right_axis_normalZ_mean = { float((left_axis_normalZ_new2[0] + right_axis_normalZ_new2[0]) / 2.0),
+													    float((left_axis_normalZ_new2[1] + right_axis_normalZ_new2[1]) / 2.0),
+													    float((left_axis_normalZ_new2[2] + right_axis_normalZ_new2[2]) / 2.0) };
+
+	if (getTwoVectorDotValue(top_fit_plane_normal, left_right_axis_normalZ_mean) < 0.0f)
 	{
-		spine_axis_normalZ.push_back((-top_fit_plane_normal[0] + (left_axis_normalZ_new2[0] + right_axis_normalZ_new2[0]) / 2.0) / 2.0);
-		spine_axis_normalZ.push_back((-top_fit_plane_normal[1] + (left_axis_normalZ_new2[1] + right_axis_normalZ_new2[1]) / 2.0) / 2.0);
-		spine_axis_normalZ.push_back((-top_fit_plane_normal[2] + (left_axis_normalZ_new2[2] + right_axis_normalZ_new2[2]) / 2.0) / 2.0);
+		top_fit_plane_normal[0] = -top_fit_plane_normal[0];
+		top_fit_plane_normal[1] = -top_fit_plane_normal[1];
+		top_fit_plane_normal[2] = -top_fit_plane_normal[2];
+
+	}
+
+	if (calculateAngle(top_fit_plane_normal, left_right_axis_normalZ_mean) > CrossAngleThreshold)
+	{
+		spine_axis_normalZ = left_right_axis_normalZ_mean;
 	}
 	else
 	{
