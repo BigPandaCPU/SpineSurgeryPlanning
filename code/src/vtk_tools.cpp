@@ -1,4 +1,7 @@
-#include "vtk_tools.h"
+ï»¿#include "vtk_tools.h"
+#include "loadonnx.h"
+#include <fstream>
+#include <sstream>
 #include <cmath>
 #include <Eigen/Dense>
 #include <vtkPoints.h>
@@ -16,8 +19,14 @@
 #include <vtkCamera.h>
 #include <vtkPNGWriter.h>
 #include <vtkImageAppend.h>
+#include <vtkMatrix4x4.h>
+#include <vtkTransform.h>
+#include <vtkTransformPolyDataFilter.h>
+#include <vtkLandmarkTransform.h>
+#include <vtkIterativeClosestPointTransform.h>
 #include <vtkInteractorStyleTrackballCamera.h>
 #include <vtkRenderWindowInteractor.h>
+#include <limits>
 
 #include <vtkAutoInit.h>
 #include <vtkRegularPolygonSource.h>
@@ -157,7 +166,7 @@ std::vector<float> matrixToVector(const Eigen::MatrixXd& matrix)
 	{
 		for (int j = 0; j < matrix.cols(); ++j)
 		{
-			vec.push_back(matrix(i, j)); // ½«ÔªËØÌí¼Óµ½ vector ÖĞ
+			vec.push_back(matrix(i, j)); // å°†å…ƒç´ æ·»åŠ åˆ° vector ä¸­
 		}
 	}
 	return vec;
@@ -168,15 +177,15 @@ std::vector<float> randomChoice(const std::vector<float>& spine_points, int num_
 {
 	std::vector<float> result;
 	std::vector<size_t> indices(spine_points.size() / 3);
-	std::iota(indices.begin(), indices.end(), 0); // Ìî³äË÷Òı 0, 1, 2, ..., spine_points.size()/3-1
+	std::iota(indices.begin(), indices.end(), 0); // å¡«å……ç´¢å¼• 0, 1, 2, ..., spine_points.size()/3-1
 
-	// Ëæ»úÊıÉú³ÉÆ÷
+	// éšæœºæ•°ç”Ÿæˆå™¨
 	std::random_device rd;
 	std::mt19937 g(rd());
 
 	if (replace)
 	{
-		// ÔÊĞíÖØ¸´²ÉÑù
+		// å…è®¸é‡å¤é‡‡æ ·
 		std::uniform_int_distribution<> dist(0, spine_points.size() / 3 - 1);
 		for (int i = 0; i < num_points; ++i)
 		{
@@ -188,7 +197,7 @@ std::vector<float> randomChoice(const std::vector<float>& spine_points, int num_
 	}
 	else
 	{
-		// ²»ÔÊĞíÖØ¸´²ÉÑù
+		// ä¸å…è®¸é‡å¤é‡‡æ ·
 		if (num_points > spine_points.size() / 3)
 		{
 			throw std::invalid_argument("num_points cannot be greater than spine_points.size() when replace is false");
@@ -207,7 +216,7 @@ std::vector<float> randomChoice(const std::vector<float>& spine_points, int num_
 
 Eigen::MatrixXd getPointsFromSTL(std::string stl_file, int num_points)
 {
-	// ¶ÁÈ¡STLÎÄ¼ş
+	// è¯»å–STLæ–‡ä»¶
 	auto mesh = open3d::io::CreateMeshFromFile(stl_file);
 	if (mesh->IsEmpty())
 	{
@@ -215,14 +224,14 @@ Eigen::MatrixXd getPointsFromSTL(std::string stl_file, int num_points)
 		throw std::runtime_error("Error: Failed to load mesh from " + stl_file);
 	}
 
-	// Ê¹ÓÃPoisson Disk Sampling´ÓÍø¸ñÖĞ²ÉÑùµã
+	// ä½¿ç”¨Poisson Disk Samplingä»ç½‘æ ¼ä¸­é‡‡æ ·ç‚¹
 	auto pcd = mesh->SamplePointsPoissonDisk(num_points);
 
-	// ½«²ÉÑùµã×ª»»ÎªEigen¾ØÕó
-	Eigen::MatrixXd points_xyz(pcd->points_.size(), 3); // ´´½¨ Nx3 µÄ¾ØÕó
+	// å°†é‡‡æ ·ç‚¹è½¬æ¢ä¸ºEigençŸ©é˜µ
+	Eigen::MatrixXd points_xyz(pcd->points_.size(), 3); // åˆ›å»º Nx3 çš„çŸ©é˜µ
 	for (size_t i = 0; i < pcd->points_.size(); ++i)
 	{
-		points_xyz.row(i) = pcd->points_[i].transpose(); // ½«Ã¿¸öµã¸´ÖÆµ½¾ØÕóµÄĞĞ
+		points_xyz.row(i) = pcd->points_[i].transpose(); // å°†æ¯ä¸ªç‚¹å¤åˆ¶åˆ°çŸ©é˜µçš„è¡Œ
 	}
 	return points_xyz;
 }
@@ -230,22 +239,22 @@ Eigen::MatrixXd getPointsFromSTL(std::string stl_file, int num_points)
 
 vtkSmartPointer<vtkPolyData> createPolyDataFromSTL(const std::string& stl_file)
 {
-	// ´´½¨ STL ÔÄ¶ÁÆ÷
+	// åˆ›å»º STL é˜…è¯»å™¨
 	vtkSmartPointer<vtkSTLReader> reader = vtkSmartPointer<vtkSTLReader>::New();
 
-	// ÉèÖÃ STL ÎÄ¼şÂ·¾¶
+	// è®¾ç½® STL æ–‡ä»¶è·¯å¾„
 	reader->SetFileName(stl_file.c_str());
 
-	// Ö´ĞĞ¶ÁÈ¡²Ù×÷
+	// æ‰§è¡Œè¯»å–æ“ä½œ
 	reader->Update();
 	if (reader->GetErrorCode() != 0)
 	{
 		throw std::runtime_error("Failed to read STL file");
 	}
-	// »ñÈ¡¶à±ßĞÎÊı¾İ
+	// è·å–å¤šè¾¹å½¢æ•°æ®
 	vtkSmartPointer<vtkPolyData> poly_data = reader->GetOutput();
-	std::cout << "There are " << poly_data->GetNumberOfPoints() << " points." << std::endl;
-	std::cout << "There are " << poly_data->GetNumberOfPolys() << " polygons." << std::endl;
+	/*std::cout << "There are " << poly_data->GetNumberOfPoints() << " points." << std::endl;
+	std::cout << "There are " << poly_data->GetNumberOfPolys() << " polygons." << std::endl;*/
 	auto num_polys = poly_data->GetNumberOfPolys();
 
 	if (num_polys > PolyDataDownSampleNumPolyThreshold)
@@ -269,50 +278,47 @@ vtkSmartPointer<vtkPolyData> createPolyDataFromSTL(const std::string& stl_file)
 
 vtkSmartPointer<vtkActor> createActorFromPolyData(vtkSmartPointer<vtkPolyData> polydata, const vtkStdString &color, double opacity)
 {
-	// ´´½¨ÑÕÉ«¶ÔÏó
+	// åˆ›å»ºé¢œè‰²å¯¹è±¡
 	vtkSmartPointer<vtkNamedColors> colors = vtkSmartPointer<vtkNamedColors>::New();
 
-	// ´´½¨¶à±ßĞÎÊı¾İÓ³ÉäÆ÷
+	// åˆ›å»ºå¤šè¾¹å½¢æ•°æ®æ˜ å°„å™¨
 	vtkSmartPointer<vtkPolyDataMapper> mapper = vtkSmartPointer<vtkPolyDataMapper>::New();
 	mapper->SetInputData(polydata);
 
-	// ´´½¨ÑİÔ±¶ÔÏó²¢ÅäÖÃÆäÊôĞÔ
+	// åˆ›å»ºæ¼”å‘˜å¯¹è±¡å¹¶é…ç½®å…¶å±æ€§
 	vtkSmartPointer<vtkActor> actor = vtkSmartPointer<vtkActor>::New();
 	actor->SetMapper(mapper);
 
-	// ÉèÖÃ²ÄÖÊÊôĞÔ
-	actor->GetProperty()->SetDiffuse(0.8);
+	// è®¾ç½®æè´¨å±æ€§
 	actor->GetProperty()->SetColor(colors->GetColor3d(color).GetData());
-	actor->GetProperty()->SetSpecular(0.3);
-	actor->GetProperty()->SetSpecularPower(60.0);
 	actor->GetProperty()->SetOpacity(opacity);
 	return actor;
 }
 
 vtkSmartPointer<vtkActor> createActorFromSTL(const std::string& stlFile, const vtkStdString &color, double opacity)
 {
-	// ´´½¨ÑÕÉ«¶ÔÏó
+	// åˆ›å»ºé¢œè‰²å¯¹è±¡
 	vtkSmartPointer<vtkNamedColors> colors = vtkSmartPointer<vtkNamedColors>::New();
 
-	// ´´½¨²¢ÅäÖÃSTL¶ÁÈ¡Æ÷
+	// åˆ›å»ºå¹¶é…ç½®STLè¯»å–å™¨
 	vtkSmartPointer<vtkSTLReader> reader = vtkSmartPointer<vtkSTLReader>::New();
 	reader->SetFileName(stlFile.c_str());
 	reader->Update();
 
-	// ¼ì²éÊÇ·ñÓĞ´íÎó·¢Éú
+	// æ£€æŸ¥æ˜¯å¦æœ‰é”™è¯¯å‘ç”Ÿ
 	if (reader->GetErrorCode() != 0) 
 	{
 		throw std::runtime_error("Failed to read STL file");
 	}
-	// ´´½¨¶à±ßĞÎÊı¾İÓ³ÉäÆ÷
+	// åˆ›å»ºå¤šè¾¹å½¢æ•°æ®æ˜ å°„å™¨
 	vtkSmartPointer<vtkPolyDataMapper> mapper = vtkSmartPointer<vtkPolyDataMapper>::New();
 	mapper->SetInputConnection(reader->GetOutputPort());
 
-	// ´´½¨ÑİÔ±¶ÔÏó²¢ÅäÖÃÆäÊôĞÔ
+	// åˆ›å»ºæ¼”å‘˜å¯¹è±¡å¹¶é…ç½®å…¶å±æ€§
 	vtkSmartPointer<vtkActor> actor = vtkSmartPointer<vtkActor>::New();
 	actor->SetMapper(mapper);
 
-	// ÉèÖÃ²ÄÖÊÊôĞÔ
+	// è®¾ç½®æè´¨å±æ€§
 	actor->GetProperty()->SetDiffuse(0.8);
 	actor->GetProperty()->SetColor(colors->GetColor3d(color).GetData());
 	actor->GetProperty()->SetSpecular(0.3);
@@ -323,38 +329,38 @@ vtkSmartPointer<vtkActor> createActorFromSTL(const std::string& stlFile, const v
 
 void showActors(std::vector<vtkSmartPointer<vtkActor>> actors, const std::string& window_name) 
 {
-	// ´´½¨äÖÈ¾Æ÷
+	// åˆ›å»ºæ¸²æŸ“å™¨
 	vtkSmartPointer<vtkRenderer> ren = vtkSmartPointer<vtkRenderer>::New();
 
-	// ½«ËùÓĞÑİÔ±Ìí¼Óµ½äÖÈ¾Æ÷ÖĞ
+	// å°†æ‰€æœ‰æ¼”å‘˜æ·»åŠ åˆ°æ¸²æŸ“å™¨ä¸­
 	for (auto actor : actors) 
 	{
 		ren->AddActor(actor);
 	}
 
-	// ÉèÖÃ±³¾°ÑÕÉ«Îª°×É«
+	// è®¾ç½®èƒŒæ™¯é¢œè‰²ä¸ºç™½è‰²
 	ren->SetBackground(1.0, 1.0, 1.0);
 
-	// ´´½¨²¢ÅäÖÃäÖÈ¾´°¿Ú
+	// åˆ›å»ºå¹¶é…ç½®æ¸²æŸ“çª—å£
 	//vtkRenderWindow* win = vtkRenderWindow::New();
 	vtkSmartPointer<vtkRenderWindow> win = vtkSmartPointer<vtkRenderWindow>::New();
 	win->AddRenderer(ren);
 	win->SetWindowName(window_name.c_str());
 
-	// ´´½¨½»»¥Æ÷
+	// åˆ›å»ºäº¤äº’å™¨
 	//vtkRenderWindowInteractor* iren = vtkRenderWindowInteractor::New();
 	vtkSmartPointer<vtkRenderWindowInteractor> iren = vtkSmartPointer<vtkRenderWindowInteractor>::New();
 	iren->SetRenderWindow(win);
 
-	// ÉèÖÃ½»»¥Æ÷ÑùÊ½ÎªTrackballCamera·ç¸ñ
+	// è®¾ç½®äº¤äº’å™¨æ ·å¼ä¸ºTrackballCameraé£æ ¼
 	//vtkInteractorStyleTrackballCamera* style = vtkInteractorStyleTrackballCamera::New();
 	vtkSmartPointer<vtkInteractorStyleTrackballCamera> style = vtkSmartPointer<vtkInteractorStyleTrackballCamera>::New();
 	iren->SetInteractorStyle(style);
 
-	// ÖØÖÃÊÓÍ¼ÒÔÊÊÓ¦ËùÓĞÑİÔ±
+	// é‡ç½®è§†å›¾ä»¥é€‚åº”æ‰€æœ‰æ¼”å‘˜
 	ren->ResetCamera();
 
-	// äÖÈ¾²¢Æô¶¯½»»¥Ñ­»·
+	// æ¸²æŸ“å¹¶å¯åŠ¨äº¤äº’å¾ªç¯
 	win->Render();
 	iren->Initialize();
 	iren->Start();
@@ -434,7 +440,7 @@ std::vector<float> getAimPoints(const std::vector<float>& points, const std::vec
 	return aim_points;
 }
 
-std::vector<float> getPointsMean(std::vector<float>& points)
+std::vector<float> getPointsMean(const std::vector<float>& points)
 {
 	int num_points = points.size() / 3;
 	float x = 0.0;
@@ -468,20 +474,20 @@ void fitPlaneFromPointsBySVD(std::vector<float>& fit_plane_center, std::vector<f
 		cloud(i, 2) = points[i * 3 + 2];
 	}
 
-	// 1¡¢¼ÆËãÖÊĞÄ
+	// 1ã€è®¡ç®—è´¨å¿ƒ
 	Eigen::RowVector3d centroid = cloud.colwise().mean();
 
-	// 2¡¢È¥ÖÊĞÄ
+	// 2ã€å»è´¨å¿ƒ
 	Eigen::MatrixXd demean = cloud;
 	demean.rowwise() -= centroid;
 
-	// ¼ÆËãĞ­·½²î¾ØÕó
-	Eigen::MatrixXd covariance = demean.transpose() * demean;
+	// è®¡ç®—åæ–¹å·®çŸ©é˜µ
+	Eigen::MatrixXd covariance = demean.transpose() * demean/(demean.rows()-1);
 
-	// ¶ÔĞ­·½²î¾ØÕó½øĞĞSVD·Ö½â£¬Ö»¼ÆËãÊİµÄV¾ØÕó
+	// å¯¹åæ–¹å·®çŸ©é˜µè¿›è¡ŒSVDåˆ†è§£ï¼Œåªè®¡ç®—ç˜¦çš„VçŸ©é˜µ
 	Eigen::JacobiSVD<Eigen::MatrixXd> svd(covariance, Eigen::ComputeThinV);
 
-	// ÌáÈ¡·¨ÏßÏòÁ¿£¨×îĞ¡ÆæÒìÖµ¶ÔÓ¦µÄÓÒÆæÒìÏòÁ¿£©
+	// æå–æ³•çº¿å‘é‡ï¼ˆæœ€å°å¥‡å¼‚å€¼å¯¹åº”çš„å³å¥‡å¼‚å‘é‡ï¼‰
 	Eigen::Vector3d normal;
 	normal = svd.matrixV().col(2);
 
@@ -719,10 +725,10 @@ float getDistanceOfTwoPoints(const std::vector<float>& point0, const std::vector
 std::vector<float> getProjectedPointOnPlane(const std::vector<float>& source_point, const std::vector<float>& plane_normal, const std::vector<float>& plane_center)
 {
 	/*
-		:param source_point: Æ½ÃæÍâµÄÒ»µã,xyz
-		:param plane_normal: Æ½Ãæ·¨ÏòÁ¿, xyz
-		:param plane_center: Æ½Ãæ·¨ÏòÁ¿ÓëÆ½ÃæµÄ½»µã, xyz
-		:return : projected_point: Æ½ÃæÍâÒ»µãÔÚ¸ÃÆ½ÃæÉÏµÄÍ¶Ó°µã,xyz,
+		:param source_point: å¹³é¢å¤–çš„ä¸€ç‚¹,xyz
+		:param plane_normal: å¹³é¢æ³•å‘é‡, xyz
+		:param plane_center: å¹³é¢æ³•å‘é‡ä¸å¹³é¢çš„äº¤ç‚¹, xyz
+		:return : projected_point: å¹³é¢å¤–ä¸€ç‚¹åœ¨è¯¥å¹³é¢ä¸Šçš„æŠ•å½±ç‚¹,xyz,
 		method reference : https://blog.csdn.net/fsac213330/article/details/53219949
 		https://blog.csdn.net/soaryy/article/details/82884691
 	*/
@@ -764,9 +770,9 @@ std::vector<float> getTwoVectorCrossValue(const std::vector<float>& vector0, con
 std::vector<vtkSmartPointer<vtkActor>> createAxisActors(const std::vector<float>& axis_origin, const std::vector<float>& axis_normalX,
 	const std::vector<float>& axis_normalY, const std::vector<float>& axis_normalZ)
 {
-	vtkSmartPointer<vtkActor> axis_normalX_actor = createLineActorByNormal( axis_origin, axis_normalX, 15.0, 3.0, "Red");
-	vtkSmartPointer<vtkActor> axis_normalY_actor = createLineActorByNormal( axis_origin, axis_normalY, 20.0, 3.0, "Green");
-	vtkSmartPointer<vtkActor> axis_normalZ_actor = createLineActorByNormal( axis_origin, axis_normalZ, 25.0, 3.0, "Blue");
+	vtkSmartPointer<vtkActor> axis_normalX_actor = createLineActorByNormal( axis_origin, axis_normalX, 30.0, 3.0, "Red");
+	vtkSmartPointer<vtkActor> axis_normalY_actor = createLineActorByNormal( axis_origin, axis_normalY, 30.0, 3.0, "Green");
+	vtkSmartPointer<vtkActor> axis_normalZ_actor = createLineActorByNormal( axis_origin, axis_normalZ, 30.0, 3.0, "Blue");
 	std::vector<vtkSmartPointer<vtkActor>> axis_actors = { axis_normalX_actor, axis_normalY_actor, axis_normalZ_actor };
 	return axis_actors;
 }
@@ -777,13 +783,13 @@ void getTheMinCutPlaneArea(float& cut_plane_area_min, std::vector<float>& bound_
 	float dis_threshold, float area_threshold, int bound_points_threshold) 
 {
 	/*
-		func:¶ÔÇĞÃæÈÆ×ÅÄ³Ò»ÖáÔÚÒ»¶¨·¶Î§ÄÚĞı×ª£¬¼ÆËã×îĞ¡µÄÄÇ¸ö½ØÃæ¡£Ğı×ªÏòÁ¿target_normalÈÆ×ÅĞı×ªÖárotate_normalĞı×ª
-		rotate_normal : Ğı×ªÖá
-		target_normal : Ğı×ªÏòÁ¿(µ¥Î»ÏòÁ¿)
-		target_center : Ğı×ªÏòÁ¿µÄÔ­µã
-		target_poly_data : ¼¹ÖùµÄstl£¬¼ÆËãÆ½Ãæ£¨target_center, target_normal£©ÓëstlÇĞµÄÇĞÃæ
-		max_rotate_angle : ×î´óµÄËÑË÷½Ç¶È£¨ - rotate_angle, rotate_angle£¬1£©£¬µİÔö½Ç¶ÈÎª1¶È
-		dis_threshold: Á½¸öÖĞĞÄµã£¨½ØÃæµÄÖĞĞÄµãºÍ³õÊ¼µÄÖĞĞÄµã£©Ö®¼äµÄÔÊĞíµÄ×î´ó¾àÀë
+		func:å¯¹åˆ‡é¢ç»•ç€æŸä¸€è½´åœ¨ä¸€å®šèŒƒå›´å†…æ—‹è½¬ï¼Œè®¡ç®—æœ€å°çš„é‚£ä¸ªæˆªé¢ã€‚æ—‹è½¬å‘é‡target_normalç»•ç€æ—‹è½¬è½´rotate_normalæ—‹è½¬
+		rotate_normal : æ—‹è½¬è½´
+		target_normal : æ—‹è½¬å‘é‡(å•ä½å‘é‡)
+		target_center : æ—‹è½¬å‘é‡çš„åŸç‚¹
+		target_poly_data : è„ŠæŸ±çš„stlï¼Œè®¡ç®—å¹³é¢ï¼ˆtarget_center, target_normalï¼‰ä¸stlåˆ‡çš„åˆ‡é¢
+		max_rotate_angle : æœ€å¤§çš„æœç´¢è§’åº¦ï¼ˆ - rotate_angle, rotate_angleï¼Œ1ï¼‰ï¼Œé€’å¢è§’åº¦ä¸º1åº¦
+		dis_threshold: ä¸¤ä¸ªä¸­å¿ƒç‚¹ï¼ˆæˆªé¢çš„ä¸­å¿ƒç‚¹å’Œåˆå§‹çš„ä¸­å¿ƒç‚¹ï¼‰ä¹‹é—´çš„å…è®¸çš„æœ€å¤§è·ç¦»
 	*/
 	std::vector<float> cut_plane_areas;
 	std::vector<std::vector<std::vector<float>>> rotate_matrixs;
@@ -837,8 +843,8 @@ void getTheMinCutPlaneArea(float& cut_plane_area_min, std::vector<float>& bound_
 std::vector<std::vector<float>> createRotateMatrixAroundNormal(const std::vector<float>& rotate_normal, float rotate_angle)
 {
 	/*
-	func:´Ëº¯ÊıµÄ¹¦ÄÜÊÇ£¬Éú³ÉÈÆÖ¸¶¨ÖáĞı×ªµÄĞı×ª¾ØÕó£¬Éú³ÉµÄĞı×ª¾ØÕóÊÇÓÒ³Ë¾ØÕó£¬point_new = point * Matrix.
-	×ó³Ë¾ØÕóºÍÓÒ³Ë¾ØÕóµÄ¶¨Òå:¸ù¾İÏà³ËÊ±¾ØÕóÔÚÄÄÒ»²à£¬¸Ã¾ØÕó¾Í³ÆÎª¶ÔÓ¦²àµÄ¾ØÕó.
+	func:æ­¤å‡½æ•°çš„åŠŸèƒ½æ˜¯ï¼Œç”Ÿæˆç»•æŒ‡å®šè½´æ—‹è½¬çš„æ—‹è½¬çŸ©é˜µï¼Œç”Ÿæˆçš„æ—‹è½¬çŸ©é˜µæ˜¯å³ä¹˜çŸ©é˜µï¼Œpoint_new = point * Matrix.
+	å·¦ä¹˜çŸ©é˜µå’Œå³ä¹˜çŸ©é˜µçš„å®šä¹‰:æ ¹æ®ç›¸ä¹˜æ—¶çŸ©é˜µåœ¨å“ªä¸€ä¾§ï¼Œè¯¥çŸ©é˜µå°±ç§°ä¸ºå¯¹åº”ä¾§çš„çŸ©é˜µ.
 	*/
 	std::vector<float> r = normalizeVector(rotate_normal);
 	float rotated_rad = rotate_angle / 180.0 * PI;
@@ -891,18 +897,18 @@ void getTheMinCutPlaneAreaAlongAxisY(float& cut_plane_area_min, std::vector<floa
 	const std::vector<float>& target_center, const std::vector<float>& target_normal, vtkSmartPointer<vtkPolyData> target_poly_data, float max_step)
 {
 	/*
-		func:¶ÔÇĞÃæÑØ×ÅÄ³Ò»ÌõÖá£¬ÔÚÒ»¶¨·¶Î§ÄÚÒÆ¶¯£¬¼ÆËã×îĞ¡µÄÄÇ¸ö½ØÃæ¡£ 
+		func:å¯¹åˆ‡é¢æ²¿ç€æŸä¸€æ¡è½´ï¼Œåœ¨ä¸€å®šèŒƒå›´å†…ç§»åŠ¨ï¼Œè®¡ç®—æœ€å°çš„é‚£ä¸ªæˆªé¢ã€‚ 
 
 		return:
-		cut_plane_area:×îĞ¡½ØÃæµÄÃæ»ı
-		bound_points_min:×îĞ¡½çÃæµÄÂÖÀªµã
-		center_min:×îĞ¡½ØÃæµÄÖĞĞÄµã
+		cut_plane_area:æœ€å°æˆªé¢çš„é¢ç§¯
+		bound_points_min:æœ€å°ç•Œé¢çš„è½®å»“ç‚¹
+		center_min:æœ€å°æˆªé¢çš„ä¸­å¿ƒç‚¹
 
 		input:
-		target_center : ½ØÃæ³õÊ¼µÄÖĞĞÄµã
-		target_normal : ½ØÃæµÄ·¨ÏòÁ¿
-		target_target_poly_data : ¼¹ÖùµÄstl
-		max_step : ÑØ×Ånormal·½ÏòÒÆ¶¯ - max_stepµ½max_step
+		target_center : æˆªé¢åˆå§‹çš„ä¸­å¿ƒç‚¹
+		target_normal : æˆªé¢çš„æ³•å‘é‡
+		target_target_poly_data : è„ŠæŸ±çš„stl
+		max_step : æ²¿ç€normalæ–¹å‘ç§»åŠ¨ - max_stepåˆ°max_step
 	*/
 
 	std::vector<float> all_cut_plane_areas;
@@ -918,7 +924,7 @@ void getTheMinCutPlaneAreaAlongAxisY(float& cut_plane_area_min, std::vector<floa
 		std::vector<float> cur_center_new;
 		float cur_cut_plane_area = 0.0;
 		getClipedCenterPoints(cur_bound_points, cur_center_new, cur_cut_plane_area, cur_center, target_normal, target_poly_data);
-		cur_step += 0.5; //Ã¿¸ö0.5mmµİÔö
+		cur_step += 0.5; //æ¯ä¸ª0.5mmé€’å¢
 
 		if (cur_bound_points.size() < 10 * 3) { continue; }
 		all_cut_plane_areas.push_back(cur_cut_plane_area);
@@ -946,16 +952,16 @@ std::vector<float> createPediclePipelineNormal(float rotate_angle, const std::ve
 	const std::vector<float>& axis_normalZ)
 {
 	/*
-	func:´Ëº¯ÊıµÄ¹¦ÄÜÊÇ×µ¹­¸ùÍ¨µÀµÄ·½Ïò£¬¾ßÌå×ö·¨ÊÇ£¬ÒÑÖª¼¹ÖùµÄ×ø±êÏµ£¬½«¼¹Öù×ø±êÏµµÄxÖá·½ÏòÈÆ×ÅzÖáĞı×ªÒ»¶¨½Ç¶È£¬µÃµ½µÄ
-         ·½Ïò¾ÍÊÇ×µ¹­¸ùÍ¨µÀµÄ·½Ïò¡£
+	func:æ­¤å‡½æ•°çš„åŠŸèƒ½æ˜¯æ¤å¼“æ ¹é€šé“çš„æ–¹å‘ï¼Œå…·ä½“åšæ³•æ˜¯ï¼Œå·²çŸ¥è„ŠæŸ±çš„åæ ‡ç³»ï¼Œå°†è„ŠæŸ±åæ ‡ç³»çš„xè½´æ–¹å‘ç»•ç€zè½´æ—‹è½¬ä¸€å®šè§’åº¦ï¼Œå¾—åˆ°çš„
+         æ–¹å‘å°±æ˜¯æ¤å¼“æ ¹é€šé“çš„æ–¹å‘ã€‚
 	input:
-	rotate_angle:Ğı×ª½Ç¶È
+	rotate_angle:æ—‹è½¬è§’åº¦
 	axis_normalX:
 	axis_normalY:
 	axis_normalZ:
 
 	return:
-	normal:×µ¹­¸ùÍ¨µÀ·¨ÏòÁ¿
+	normal:æ¤å¼“æ ¹é€šé“æ³•å‘é‡
 	*/
 	auto rotate_matrix = createRotateMatrixAroundNormal(axis_normalZ, rotate_angle);
 	auto pedicle_pipeline_normal = getVectorDotMatrixValue(axis_normalX, rotate_matrix);
@@ -965,14 +971,14 @@ std::vector<float> createPediclePipelineNormal(float rotate_angle, const std::ve
 std::vector<std::vector<float>> getIntersectPointsFromLineAndPolyData(std::vector<float>& point0, std::vector<float>& point1, vtkSmartPointer<vtkPolyData> poly_data)
 {
 	/*
-	func:´Ëº¯ÊıµÄ¹¦ÄÜÊÇ¼ÆËã×µ¹­¸ùÍ¨µÀÓë×µÌåÏà½»µÄÁ½¸ö½»µã
+	func:æ­¤å‡½æ•°çš„åŠŸèƒ½æ˜¯è®¡ç®—æ¤å¼“æ ¹é€šé“ä¸æ¤ä½“ç›¸äº¤çš„ä¸¤ä¸ªäº¤ç‚¹
 	author:BigPanda
 	date:2025.02.14
 	
 	input: 
-		point0:×µ¹­¸ùÍ¨µÀ·½ÏòÉÏµÄµã0
-		point1:×µ¹­¸ùÍ¨µÀ·½ÏòÉÏµÄµã1
-		target_poly_data:¼¹ÖùµÄpolydata
+		point0:æ¤å¼“æ ¹é€šé“æ–¹å‘ä¸Šçš„ç‚¹0
+		point1:æ¤å¼“æ ¹é€šé“æ–¹å‘ä¸Šçš„ç‚¹1
+		target_poly_data:è„ŠæŸ±çš„polydata
 
 	return:
 		
@@ -1004,18 +1010,18 @@ void getTheClosedTwoPoints(std::vector<float>& point0, std::vector<float>& point
 	const std::vector<float>& source_point, const std::vector<float>& reference_normal)
 {
 	/*
-	func:´Ëº¯ÊıµÄ¹¦ÄÜÊÇ£¬¼ÆËã×µ¹­¸ùÍ¨µÀÓë×µÌåµÄËùÓĞ½»µãÖĞ£¬Àë×µ¹­¸ùÍ¨µÀÖĞĞÄµã×î½üµÄÁ½¸öµã
+	func:æ­¤å‡½æ•°çš„åŠŸèƒ½æ˜¯ï¼Œè®¡ç®—æ¤å¼“æ ¹é€šé“ä¸æ¤ä½“çš„æ‰€æœ‰äº¤ç‚¹ä¸­ï¼Œç¦»æ¤å¼“æ ¹é€šé“ä¸­å¿ƒç‚¹æœ€è¿‘çš„ä¸¤ä¸ªç‚¹
 	author:BigPanda
 	date:2025.02.14
 
 	input:
-		all_points:ËùÓĞµÄ½»µã
-		source_point:Ä¿±êµã£¨×µ¹­¸ùÍ¨µÀÖĞĞÄµã£©
-		reference_normal:²Î¿¼µÄÏòÁ¿£¨¶Ô×î½üµÄÁ½¸öµã°´ÕÕ¸Ã·½Ïò½øĞĞÅÅĞò£©
+		all_points:æ‰€æœ‰çš„äº¤ç‚¹
+		source_point:ç›®æ ‡ç‚¹ï¼ˆæ¤å¼“æ ¹é€šé“ä¸­å¿ƒç‚¹ï¼‰
+		reference_normal:å‚è€ƒçš„å‘é‡ï¼ˆå¯¹æœ€è¿‘çš„ä¸¤ä¸ªç‚¹æŒ‰ç…§è¯¥æ–¹å‘è¿›è¡Œæ’åºï¼‰
 
 	return:
-		point0:Ä¿±êµã0
-		point1:Ä¿±êµã1
+		point0:ç›®æ ‡ç‚¹0
+		point1:ç›®æ ‡ç‚¹1
 	*/
 	if (all_points.size() < 2) 
 	{
@@ -1198,6 +1204,642 @@ float getAngleOfCutPlaneNormalAndSpineAxisNormalX(const std::vector<float>& cut_
 	
 	return angle;
 }
+bool loadLandmarksFromFile(const std::string& landmark_file, std::vector<float>& top_points, std::vector<float>& left_points,
+	std::vector<float>& right_points)
+{
+	std::ifstream input(landmark_file);
+	if (!input.is_open())
+	{
+		std::cout << "error, failed to open " << landmark_file << std::endl;
+		return false;
+	}
+
+	std::string line;
+	while (std::getline(input, line))
+	{
+		std::stringstream ss(line);
+		std::string value;
+		std::vector<std::string> parts;
+		while (getline(ss, value,','))
+		{
+			parts.push_back(value);
+		}
+		int label = stoi(parts[0]);
+		float cur_x = stof(parts[1]);
+		float cur_y = stof(parts[2]);
+		float cur_z = stof(parts[3]);
+
+		if (label == SPINE_POINT_LABEL::TOP - 1)
+		{
+			top_points.push_back(cur_x);
+			top_points.push_back(cur_y);
+			top_points.push_back(cur_z);
+		}
+		if (label == SPINE_POINT_LABEL::LEFT - 1)
+		{
+			left_points.push_back(cur_x);
+			left_points.push_back(cur_y);
+			left_points.push_back(cur_z);
+		}
+
+		if (label == SPINE_POINT_LABEL::RIGHT - 1)
+		{
+			right_points.push_back(cur_x);
+			right_points.push_back(cur_y);
+			right_points.push_back(cur_z);
+		}
+	}
+	return true;
+}
+std::vector<float> getTheMinAxisPoint(const std::vector<float>& points)
+{
+	float minX = (std::numeric_limits<float>::max)();
+	float minY = (std::numeric_limits<float>::max)();
+	float minZ = (std::numeric_limits<float>::max)();
+	for (int i = 0; i < points.size() / 3; i++)
+	{
+		if (minX > points[i * 3 + 0]) { minX = points[i * 3 + 0]; }
+		if (minY > points[i * 3 + 1]) { minY = points[i * 3 + 1]; }
+		if (minZ > points[i * 3 + 2]) { minZ = points[i * 3 + 2]; }
+	}
+	std::vector<float> min_point = { minX, minY, minZ };
+	return min_point;
+}
+
+std::vector<float> getTheMaxAxisPoint(const std::vector<float>& points)
+{
+	float maxX = std::numeric_limits<float>::lowest();
+	float maxY = std::numeric_limits<float>::lowest();
+	float maxZ = std::numeric_limits<float>::lowest();
+	for (int i = 0; i < points.size() / 3; i++)
+	{
+		if (maxX < points[i * 3 + 0]) { maxX = points[i * 3 + 0]; }
+		if (maxY < points[i * 3 + 1]) { maxY = points[i * 3 + 1]; }
+		if (maxZ < points[i * 3 + 2]) { maxZ = points[i * 3 + 2]; }
+	}
+	std::vector<float> max_point = { maxX, maxY, maxZ };
+	return max_point;
+}
+/*
+Func:
+	è®¡ç®—ç‚¹ä¸ç‰¹å¾å‘é‡çš„ä¹˜ç§¯
+
+Input:
+	points:è¾“å…¥çš„ç‚¹åæ ‡ï¼Œä»¥vectorçš„å½¢å¼è¿›è¡Œå­˜å‚¨ï¼Œx0,y0,z0,x1,y1,z1.....
+	matrix:ç‰¹å¾å‘é‡è¡¨ç¤ºçš„çŸ©é˜µï¼Œæ¯ä¸€è¡Œè¡¨ç¤ºä¸€ä¸ªç‰¹å¾å‘é‡ï¼Œè¡Œå‘é‡çš„å½¢å¼è¡¨ç¤ºï¼Œ
+	       è€Œä¸æ˜¯åˆ—çš„å½¢å¼è¡¨ç¤ºï¼Œæ‰€ä»¥åœ¨ä¹˜çš„æ—¶å€™ï¼Œæ˜¯å¯¹æ¯ä¸€è¡Œç›¸ä¹˜ã€‚
+Output: 
+	points_new:å˜æ¢åçš„ç‚¹ï¼Œä»¥vectorå½¢å¼è¿›è¡Œå­˜å‚¨
+
+Author:BigPdanda
+Date:2025.03.17 14:01
+
+*/
+
+std::vector<float> getPointsDotMatrix(const std::vector<float>& points, const std::vector<std::vector<float>>& matrix)
+{
+	std::vector<float> points_new = points;
+	for (int i = 0; i < points.size() / 3; i++)
+	{
+		points_new[i * 3 + 0] = points[i * 3 + 0] * matrix[0][0] + points[i * 3 + 1] * matrix[0][1] + points[i * 3 + 2] * matrix[0][2];
+		points_new[i * 3 + 1] = points[i * 3 + 0] * matrix[1][0] + points[i * 3 + 1] * matrix[1][1] + points[i * 3 + 2] * matrix[1][2];
+		points_new[i * 3 + 2] = points[i * 3 + 0] * matrix[2][0] + points[i * 3 + 1] * matrix[2][1] + points[i * 3 + 2] * matrix[2][2];
+	}
+	return points_new;
+}
+
+std::vector<std::vector<float>> matrix4DotMatrix4(const std::vector<std::vector<float>>& matrix1, const std::vector<std::vector<float>>& matrix2)
+{
+	std::vector<std::vector<float>> matrix = matrix1;
+	for (int i = 0; i < 4; i++)
+	{
+		for (int j = 0; j < 4; j++)
+		{
+			matrix[i][j] = matrix1[i][0] * matrix2[0][j] + matrix1[i][1] * matrix2[1][j] + matrix1[i][2] * matrix2[2][j] + matrix1[i][3] * matrix2[3][j];
+		}
+	}
+	return matrix;
+}
+
+/*
+	Func: ç‚¹äº‘å»ä¸­å¿ƒ
+	Return:å»ä¸­å¿ƒåçš„ç‚¹
+
+	Author:BigPanda
+	Date:2025.03.12
+
+*/
+std::vector<float> pointsDecenter(const std::vector<float>& points, const std::vector<float>& center)
+{
+	std::vector<float> points_new = points;
+	for (int i = 0; i < points_new.size() / 3; i++)
+	{
+		points_new[i * 3 + 0] = points[i * 3 + 0] - center[0];
+		points_new[i * 3 + 1] = points[i * 3 + 1] - center[1];
+		points_new[i * 3 + 2] = points[i * 3 + 2] - center[2];
+	}
+	return points_new;
+}
+
+/*
+	Func: PCAç®—æ³•è®¡ç®—ä¸‰ç»´ç‚¹äº‘çš„PCAè½´çš„ç‰¹å¾å€¼å’Œç‰¹å¾å‘é‡
+	Input: pointsï¼Œå¾…è®¡ç®—PCAçš„ç”µæº
+	Output: ç‰¹å¾å€¼å’Œå¯¹åº”çš„ç‰¹å¾å‘é‡ã€ç‚¹äº‘çš„ä¸­å¿ƒç‚¹
+	
+	Author:BigPanda
+	Date:2025.03.12
+*/
+
+void PCA(const std::vector<float> points, std::vector<float>& eigen_values, std::vector<std::vector<float>>& eigen_vectors,
+	std::vector<float>& points_center)
+{
+	int num_points = points.size() / 3;
+	Eigen::MatrixXd cloud(num_points, 3);
+
+	for (int i = 0; i < num_points; ++i)
+	{
+		cloud(i, 0) = points[i * 3 + 0];
+		cloud(i, 1) = points[i * 3 + 1];
+		cloud(i, 2) = points[i * 3 + 2];
+	}
+
+	// 1ã€è®¡ç®—è´¨å¿ƒ
+	Eigen::RowVector3d centroid = cloud.colwise().mean();
+
+	// 2ã€å»è´¨å¿ƒ
+	Eigen::MatrixXd demean = cloud;
+	demean.rowwise() -= centroid;
+
+	points_center.push_back(float(centroid[0]));
+	points_center.push_back(float(centroid[1]));
+	points_center.push_back(float(centroid[2]));
+
+
+	// è®¡ç®—åæ–¹å·®çŸ©é˜µ
+	Eigen::MatrixXd covariance = demean.transpose() * demean/(demean.rows());
+	//std::cout << "\nåæ–¹å·®çŸ©é˜µ:\n" << covariance << std::endl;
+
+	//è®¡ç®—ç‰¹å¾å€¼å’Œç‰¹å¾å‘é‡
+	Eigen::EigenSolver<Eigen::MatrixXd> eig(covariance);
+	Eigen::MatrixXd eig_vectors = eig.eigenvectors().real();
+	Eigen::MatrixXd eig_values = eig.eigenvalues().real();
+
+
+
+	double values[3] = { eig_values(0), eig_values(1), eig_values(2) };
+	int indexs[3] = { 0, 1, 2 };
+	for (int i = 0; i < 3; i++)
+	{
+		for (int j = i+1; j < 3; j++)
+		{
+			if (values[i] < values[j])
+			{   
+				auto tmp_value = values[i];
+				values[i] = values[j];
+				values[j] = tmp_value;
+				auto tmp_index = indexs[i];
+				indexs[i] = indexs[j];
+				indexs[j] = tmp_index;
+			}
+		}
+	}
+	Eigen::Vector3d normal;
+	std::vector<float> normalX, normalY;
+	for (int i = 0; i < 3; i++)
+	{
+		auto cur_index = indexs[i];
+		eigen_values.push_back(eig_values(indexs[i],0));
+
+		normal = eig_vectors.col(cur_index);
+		if (i == 0)
+		{
+			normalX.push_back(float(normal[0]));
+			normalX.push_back(float(normal[1]));
+			normalX.push_back(float(normal[2]));
+		}
+		if (i == 1)
+		{
+			normalY.push_back(float(normal[0]));
+			normalY.push_back(float(normal[1]));
+			normalY.push_back(float(normal[2]));
+		}
+	}
+	//std::cout << "\nç‰¹å¾å€¼ä¸º:" << eigen_values[0] << "," << eigen_values[1] << "," << eigen_values[2] << std::endl;
+
+   //ç‰¹å¾å‘é‡ç»Ÿä¸€ä½¿ç”¨å³æ‰‹åæ ‡ç³»
+	auto normalZ = getTwoVectorCrossValue(normalX, normalY);
+	eigen_vectors.push_back(normalX);
+	eigen_vectors.push_back(normalY);
+	eigen_vectors.push_back(normalZ);
+}
+
+void printMatrix(const std::vector<std::vector<float>>& matrix)
+{
+	for (int i = 0; i < matrix.size(); i++)
+	{
+		for (int j = 0; j < matrix[i].size(); j++)
+		{
+			std::cout << matrix[i][j];
+			if (j == (matrix[0].size() - 1))
+			{
+				std::cout << endl;
+			}
+			else
+			{
+				std::cout << ",";
+			}
+		}
+	}
+	//std::cout << matrix[0][0] << "," << matrix[0][1] << "," << matrix[0][2] << "," << matrix[0][3] << std::endl;
+	//std::cout << matrix[1][0] << "," << matrix[1][1] << "," << matrix[1][2] << "," << matrix[1][3] << std::endl;
+	//std::cout << matrix[2][0] << "," << matrix[2][1] << "," << matrix[2][2] << "," << matrix[2][3] << std::endl;
+	//std::cout << matrix[3][0] << "," << matrix[3][1] << "," << matrix[3][2] << "," << matrix[3][3] << std::endl;
+}
+
+/*
+	funcï¼šå°†source_pointså¯¹é½åˆ°target_points
+	ç®—æ³•æè¿°:
+			A.é¦–å…ˆå°†ä¸­å¿ƒå½’é›¶ï¼Œè®¡ç®—ç‚¹äº‘çš„ä¸­å¿ƒç‚¹ï¼Œç„¶åå‡å»è¿™ä¸ªä¸­å¿ƒç‚¹
+			B.åˆ©ç”¨PCAç®—æ³•åˆ†åˆ«è®¡ç®—æ¯ä¸ªç‚¹äº‘çš„pcaè½´ï¼ŒæŒ‰ç…§ç‰¹å¾å€¼ç”±å¤§åˆ°å°è¿›è¡Œæ’åˆ—
+			C.å°†sourceå’Œtargetç‚¹äº‘åˆ†åˆ«å˜æ¢åˆ°å¯¹åº”çš„pcaè½´ä¸‹ï¼Œæ­¤æ—¶å°±å®ç°äº†ç‚¹äº‘çš„ç²—å¯¹é½
+			source_points_aligned = (source_points - source_center)*source_vectors
+			target_points_aligned = (target_points - target_center)*target_vectors
+			D.è¿›ä¸€æ­¥éªŒè¯å¯¹é½æ˜¯å¦æ­£ç¡®ã€‚ï¼ˆå°†ä¸¤ä¸ªpcaåæ ‡ç³»å¯¹é½ä¹‹åï¼Œç”±äºå­˜åœ¨æ­£åå‘çš„é—®é¢˜ï¼Œéœ€è¦è¿›ä¸€æ­¥éªŒè¯æ˜¯å¦çœŸæ­£å¯¹é½ï¼‰
+			åœ¨xã€yã€zè¿™ä¸‰ä¸ªæ–¹å‘ä¸Šï¼Œåˆ†åˆ«å˜æ¢æ–¹å‘ï¼Œç„¶åå†è®¡ç®—ä¸¤ä¸ªç‚¹äº‘ä¹‹é—´çš„æœ€å°è·ç¦»ï¼Œå–è·ç¦»æœ€å°çš„é‚£ä¸ªå˜æ¢T
+			E.å¾—åˆ°æœ€ç»ˆçš„å¯¹é½ç»“æœ
+			source_points_aligned_final = source_points_aligned * (target_vectors.T) * T+target_canter
+	:param source_points:
+	:param target_points:
+	:return:ç²—é…å‡†çŸ©é˜µï¼Œstd::vector<std::vector<float>>
+*/
+vtkSmartPointer<vtkMatrix4x4> preAlignedTwoPointClouds(const std::vector<float>& source_points, const std::vector<float>& target_points,
+	std::vector<std::vector<float>>& source_pca_vectors, std::vector<std::vector<float>>& target_pca_vectors)
+{
+	std::vector<float> source_eigen_values;
+	std::vector<float> source_center;
+	PCA(source_points, source_eigen_values, source_pca_vectors, source_center);
+	std::vector<std::vector<float>> source_eigen_vectors = source_pca_vectors;
+
+	std::vector<float> target_eigen_values;
+	std::vector<float> target_center;
+	PCA(target_points, target_eigen_values, target_pca_vectors, target_center);
+	std::vector<std::vector<float>> target_eigen_vectors = target_pca_vectors;
+
+
+	auto source_points_decenter = pointsDecenter(source_points, source_center);
+	auto target_points_decenter = pointsDecenter(target_points, target_center);
+
+	auto pre_aligned_source_points = getPointsDotMatrix(source_points_decenter, source_eigen_vectors);
+	auto pre_aligned_target_points = getPointsDotMatrix(target_points_decenter, target_eigen_vectors);
+
+	/*auto source_points_actors = createPointsActor(pre_aligned_source_points, 0.3, 1.0, "yellow");
+	auto target_points_actors = createPointsActor(pre_aligned_target_points, 0.3, 1.0, "red");
+	std::vector<vtkSmartPointer<vtkActor>> all_actors;
+	all_actors.insert(all_actors.end(), source_points_actors.begin(), source_points_actors.end());
+	all_actors.insert(all_actors.end(), target_points_actors.begin(), target_points_actors.end());
+	showActors(all_actors);
+*/
+
+
+
+
+	auto source_max_point = getTheMaxAxisPoint(pre_aligned_source_points);
+	auto source_min_point = getTheMinAxisPoint(pre_aligned_source_points);
+	
+	auto target_max_point = getTheMaxAxisPoint(pre_aligned_target_points);
+	auto target_min_point = getTheMinAxisPoint(pre_aligned_target_points);
+
+	std::vector<float> source_bbox = { source_max_point[0] - source_min_point[0],
+									   source_max_point[1] - source_min_point[1],
+									   source_max_point[2] - source_min_point[2] };
+
+	std::vector<float> target_bbox = { target_max_point[0] - target_min_point[0],
+									   target_max_point[1] - target_min_point[1],
+									   target_max_point[2] - target_min_point[2] };
+
+	std::vector<std::vector<float>> scale_matrix = { {target_bbox[0] / source_bbox[0],0.0, 0.0},
+													 {0.0, target_bbox[1] / source_bbox[1],0.0},
+													 {0.0, 0.0, target_bbox[2] / source_bbox[2] } };
+
+
+	auto pre_aligned_source_points_scaled = getPointsDotMatrix(pre_aligned_source_points, scale_matrix);
+
+
+	//ä¸¤ä¸ªç‚¹äº‘çš„ä¸»è½´æ–¹å‘ï¼Œæœ‰å¯èƒ½å‡ºç°åå‘çš„æƒ…å†µï¼Œéœ€è¦å¯¹å…¶è¿›è¡Œå¤„ç†
+	std::vector<std::vector<float>> R0 = { {1.0, 0.0, 0.0},{0.0, 1.0, 0.0,},{0.0, 0.0, 1.0} };
+	std::vector<std::vector<float>> R1 = { {1.0, 0.0, 0.0},{0.0, -1.0, 0.0,},{0.0, 0.0, -1.0} };
+	std::vector<std::vector<float>> R2 = { {-1.0, 0.0, 0.0},{0.0, -1.0, 0.0,},{0.0, 0.0, 1.0} };
+	std::vector<std::vector<float>> R3 = { {-1.0, 0.0, 0.0},{0.0, 1.0, 0.0,},{0.0, 0.0, -1.0} };
+	std::vector<std::vector<std::vector<float>>> R = { R0, R1, R2, R3 };
+
+	
+	std::vector<Eigen::Vector3d> points;
+	for (int i = 0; i < pre_aligned_target_points.size() / 3; i++)
+	{
+		double curX = pre_aligned_target_points[i * 3 + 0];
+		double curY = pre_aligned_target_points[i * 3 + 1];
+		double curZ = pre_aligned_target_points[i * 3 + 2];
+		points.push_back(Eigen::Vector3d(curX, curY, curZ));
+	}
+	open3d::geometry::PointCloud point_cloud(points);
+	open3d::geometry::KDTreeFlann  kd_tree(point_cloud);
+
+	std::vector<int> cur_indices;
+	std::vector<double> cur_distance;
+	double all_distance[4] = { 0.0 };
+	for (int i = 0; i < R.size(); i++)
+	{
+		auto curR = R[i];
+		double cur_distance_sum = 0.0;
+		auto cur_points = getPointsDotMatrix(pre_aligned_source_points, curR);
+		for (int j = 0; j < cur_points.size() / 3; j++)
+		{
+			double curX = cur_points[j * 3 + 0];
+			double curY = cur_points[j * 3 + 1];
+			double curZ = cur_points[j * 3 + 2];
+			Eigen::Vector3d query_point(curX, curY, curZ);
+			kd_tree.SearchKNN(query_point, 1, cur_indices, cur_distance);
+	
+			cur_distance_sum += sqrt(cur_distance[0]);
+		}
+		all_distance[i] = cur_distance_sum;
+	}
+
+	int min_index = 0;
+	auto min_distance = all_distance[min_index];
+	for (int i = 1; i < 4; i++)
+	{
+		if (min_distance > all_distance[i])
+		{
+			min_index = i;
+			min_distance = all_distance[i];
+		}
+	}
+	auto trans = R[min_index];
+	/*std::cout << "source center:" << source_center[0] << "," << source_center[1] << "," << source_center[2] << std::endl << std::endl;
+	std::cout << "target center:" << target_center[0] << "," << target_center[1] << "," << target_center[2] << std::endl << std::endl;*/
+
+	std::vector<std::vector<float>> matrix1 = { {1.0, 0.0, 0.0, -source_center[0]}, 
+												{0.0, 1.0, 0.0, -source_center[1]},
+												{0.0, 0.0, 1.0, -source_center[2]}, 
+	                                            {0.0, 0.0, 0.0, 1.0} };
+	/*std::cout << "\nMatrix1:" << std::endl;
+	printMatrix(matrix1);
+*/
+	std::vector<std::vector<float>> matrix2 = { {source_eigen_vectors[0][0], source_eigen_vectors[0][1], source_eigen_vectors[0][2], 0.0},
+												{source_eigen_vectors[1][0], source_eigen_vectors[1][1], source_eigen_vectors[1][2], 0.0},
+												{source_eigen_vectors[2][0], source_eigen_vectors[2][1], source_eigen_vectors[2][2], 0.0},
+												{0.0, 0.0, 0.0, 1.0}, };
+	//std::cout << "\nMatrix2:" << std::endl;
+	//printMatrix(matrix2);
+
+
+	std::vector<std::vector<float>> matrix3 = { {trans[0][0], trans[0][1], trans[0][2], 0.0},
+												{trans[1][0], trans[1][1], trans[1][2], 0.0},
+												{trans[2][0], trans[2][1], trans[2][2], 0.0},
+												{0.0, 0.0, 0.0, 1.0}};
+	/*std::cout << "\nMatrix3:" << std::endl;
+	printMatrix(matrix3);
+*/
+	std::vector<std::vector<float>> matrix4 = { {target_eigen_vectors[0][0], target_eigen_vectors[1][0], target_eigen_vectors[2][0], 0.0},
+												{target_eigen_vectors[0][1], target_eigen_vectors[1][1], target_eigen_vectors[2][1], 0.0},
+												{target_eigen_vectors[0][2], target_eigen_vectors[1][2], target_eigen_vectors[2][2], 0.0},
+											    {0.0, 0.0, 0.0, 1.0} };
+	/*std::cout << "\nMatrix4:" << std::endl;
+	printMatrix(matrix4);*/
+
+	std::vector<std::vector<float>> matrix5 = { {1.0, 0.0, 0.0, target_center[0]},
+												{0.0, 1.0, 0.0, target_center[1]},
+												{0.0, 0.0, 1.0, target_center[2]},
+												{0.0, 0.0, 0.0, 1.0} };
+	//std::cout << "\nMatrix5:" << std::endl;
+	//printMatrix(matrix5);
+
+
+	auto tmp = matrix4DotMatrix4(matrix5, matrix4);
+	tmp = matrix4DotMatrix4(tmp, matrix3);
+	tmp = matrix4DotMatrix4(tmp, matrix2);
+	tmp = matrix4DotMatrix4(tmp, matrix1);
+	
+	auto vtk_matrix = vtkSmartPointer<vtkMatrix4x4>::New();
+	for (int i = 0; i < 4; i++)
+	{
+		for (int j = 0; j < 4; j++)
+		{
+			vtk_matrix->SetElement(i, j, tmp[i][j]);
+		}
+	}
+	
+	return vtk_matrix;
+}
+
+vtkSmartPointer<vtkMatrix4x4> convertVectorMatrix3x3TovtkMatrix4x4(const std::vector<std::vector<float>>& matrix)
+{
+	auto vtk_matrix = vtkSmartPointer<vtkMatrix4x4>::New();
+	for (int i = 0; i < 4; i++)
+	{
+		for (int j = 0; j < 4; j++)
+		{
+			if (i < 3 && j < 3)
+			{
+				vtk_matrix->SetElement(i, j, matrix[i][j]);
+			}
+			else if (i == 3 && j == 3)
+			{
+				vtk_matrix->SetElement(i, j, 1.0);
+			}
+			else
+			{
+				vtk_matrix->SetElement(i, j, 0.0);
+			}
+		}
+	}
+	return vtk_matrix;
+}
+/*
+Func:
+	è®¡ç®—ç‚¹ä¸å·¦ä¹˜çŸ©é˜µåå¾—åˆ°çš„æ–°çš„ç‚¹çš„åæ ‡
+
+*/
+
+void vectorPointsDotvtkMatrix4x4(const std::vector<float>& points, const vtkSmartPointer<vtkMatrix4x4> left_matrix, std::vector<float>& points_new)
+{
+	double* data = left_matrix->GetData();
+	for (int i = 0; i < points.size() / 3; i++)
+	{
+		auto curX = points[i * 3 + 0];
+		auto curY = points[i * 3 + 1];
+		auto curZ = points[i * 3 + 2];
+		for (int i = 0; i < 3; i++)
+		{
+			double cur_data = data[i * 4 + 0] * curX + data[i * 4 + 1] * curY + data[i * 4 + 2] * curZ + data[i * 4 + 3] * 1.0;
+			points_new.push_back(float(cur_data));
+		}
+	}
+}
+
+
+/*
+Funcï¼š
+	åŸºäºæ¨¡æ¿åŒ¹é…çš„æ–¹æ³•ï¼Œå¾—åˆ°æ¤ä½“çš„å·¦ã€å³æ¤å¼“æ ¹ä»¥åŠæ¤ä½“é¡¶é¢çš„ç‰¹å¾ç‚¹
+Input:
+	label_name:å¾…é…å‡†çš„æ¤æ®µçš„åç§°,å–å€¼èŒƒå›´ä¸º"08"-"25"
+	template_stl_dir:æ¨¡æ¿stlæ–‡ä»¶æ‰€åœ¨çš„è·¯å¾„
+	target_polydata:å¾…é…å‡†çš„æ¤ä½“çš„polydata
+	target_points:å¾…é…å‡†çš„æ¤ä½“çš„ç‚¹äº‘
+
+Output:
+	left_points:é…å‡†å¾—åˆ°çš„å·¦ä¾§æ¤å¼“æ ¹å³¡éƒ¨çš„ç‰¹å¾ç‚¹
+	right_points:é…å‡†å¾—åˆ°çš„å³ä¾§æ¤å¼“æ ¹å³¡éƒ¨çš„ç‰¹å¾ç‚¹
+	top_points:é…å‡†å¾—åˆ°çš„æ¤ä½“é¡¶é¢çš„ç‰¹å¾ç‚¹
+
+Author:BigPanda
+Date:2025.03.17 14:52
+
+*/
+void registrationPolydata(const std::string& label_name, const std::string& template_stl_dir, 
+	const vtkSmartPointer<vtkPolyData> target_polydata ,const std::vector<float>& target_points,
+	std::vector<float>& left_points,std::vector<float>& right_points, std::vector<float>& top_points)
+{
+	std::string src_landmark_file = template_stl_dir + "/label_" + label_name + ".txt";
+	std::string src_stl_file = template_stl_dir + "/label_" + label_name + ".stl";
+	std::vector<float> src_top_points;
+	std::vector<float> src_left_points;
+	std::vector<float> src_right_points;
+	
+	Eigen::MatrixXd source_points_eigen = getPointsFromSTL(src_stl_file, POINT_NUM);
+	auto source_polydata = createPolyDataFromSTL(src_stl_file);
+	std::vector<float> source_points = matrixToVector(source_points_eigen);
+
+	std::vector<std::vector<float>> source_pca_vectors;
+	std::vector<std::vector<float>> target_pca_vectors;
+
+
+	auto status = loadLandmarksFromFile(src_landmark_file, src_top_points, src_left_points, src_right_points);
+
+	auto pre_aligned_matrix = preAlignedTwoPointClouds(source_points, target_points, source_pca_vectors, target_pca_vectors);
+
+
+	/*auto source_vtk_matrix = convertVectorMatrix3x3TovtkMatrix4x4(source_pca_vectors);
+	auto target_vtk_matrix = convertVectorMatrix3x3TovtkMatrix4x4(target_pca_vectors); 
+
+	auto source_center = getPointsMean(source_points);
+	auto target_center = getPointsMean(target_points);*/
+
+	//auto source_transform1 = vtkSmartPointer<vtkTransform>::New();
+	//source_transform1->Translate(-source_center[0], -source_center[1], -source_center[2]);
+	//auto source_transform_filter1 = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+	//source_transform_filter1->SetTransform(source_transform1);
+	//source_transform_filter1->SetInputData(source_polydata);
+	//source_transform_filter1->Update();
+
+	//auto source_transform2 = vtkSmartPointer<vtkTransform>::New();
+	//source_transform2->SetMatrix(source_vtk_matrix);
+
+	//auto source_transform_filter2 = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+	//source_transform_filter2->SetTransform(source_transform2);
+	//source_transform_filter2->SetInputData(source_transform_filter1->GetOutput());
+	//source_transform_filter2->Update();
+
+	/*auto source_transform3 = vtkSmartPointer<vtkTransform>::New();
+	source_transform3->Translate(source_center[0], source_center[1], source_center[2]);
+	auto source_transform_filter3 = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+	source_transform_filter3->SetTransform(source_transform3);
+	source_transform_filter3->SetInputData(source_transform_filter2->GetOutput());
+	source_transform_filter3->Update();*/
+
+
+	//auto source_transform_actor = createActorFromPolyData(source_transform_filter2->GetOutput(), "red", 1.0);
+
+	//auto target_transform1 = vtkSmartPointer<vtkTransform>::New();
+	//target_transform1->Translate(-target_center[0], -target_center[1], -target_center[2]);
+	//auto target_transform_filter1 = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+	//target_transform_filter1->SetTransform(target_transform1);
+	//target_transform_filter1->SetInputData(target_polydata);
+	//target_transform_filter1->Update();
+
+	//auto target_transform2 = vtkSmartPointer<vtkTransform>::New();
+	//target_transform2->SetMatrix(target_vtk_matrix);
+
+	//auto target_transform_filter2 = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+	//target_transform_filter2->SetTransform(target_transform2);
+	//target_transform_filter2->SetInputData(target_transform_filter1->GetOutput());
+	//target_transform_filter2->Update();
+
+	//auto target_transform_actor = createActorFromPolyData(target_transform_filter2->GetOutput(), "blue", 1.0);
+
+	//auto source_axis_actors = createAxisActors(source_center, source_pca_vectors[0], source_pca_vectors[1], source_pca_vectors[2]);
+	//auto source_main_vector_actor2 = createLineActorByNormal({0.0, 0.0, 0.0}, { 1.0, 0.0, 0.0 }, 100.0, 6, "red");
+
+	//auto target_axis_actors = createAxisActors(target_center, target_pca_vectors[0], target_pca_vectors[1], target_pca_vectors[2]);
+
+
+	//auto target_main_vector_actor = createLineActorByNormal(target_center, target_pca_vectors[0], 100.0, 4, "red");
+
+
+	auto pre_aligned_transform = vtkSmartPointer<vtkTransform>::New();
+	pre_aligned_transform->SetMatrix(pre_aligned_matrix);
+
+	auto pre_aligned_trans_poly_filter = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+	pre_aligned_trans_poly_filter->SetTransform(pre_aligned_transform);
+	pre_aligned_trans_poly_filter->SetInputData(source_polydata);
+	pre_aligned_trans_poly_filter->Update();
+
+	auto icp = vtkSmartPointer<vtkIterativeClosestPointTransform>::New();
+	icp->SetSource(pre_aligned_trans_poly_filter->GetOutput());
+	icp->SetTarget(target_polydata);
+	icp->GetLandmarkTransform()->SetModeToRigidBody();
+	icp->SetMaximumNumberOfIterations(100);
+	icp->StartByMatchingCentroidsOn();
+	icp->Modified();
+	icp->Update();
+
+	auto icp_matrix = icp->GetMatrix();
+
+	auto icp_trans_form_filter = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+	icp_trans_form_filter->SetInputData(pre_aligned_trans_poly_filter->GetOutput());
+	icp_trans_form_filter->SetTransform(icp);
+	icp_trans_form_filter->Update();
+
+	auto final_matrix = vtkSmartPointer<vtkMatrix4x4>::New();
+	vtkMatrix4x4::Multiply4x4(icp_matrix, pre_aligned_matrix, final_matrix);
+
+
+	vectorPointsDotvtkMatrix4x4(src_top_points, final_matrix, top_points);
+	vectorPointsDotvtkMatrix4x4(src_left_points, final_matrix, left_points);
+	vectorPointsDotvtkMatrix4x4(src_right_points, final_matrix, right_points);
+
+	/*auto data = final_matrix->GetData();
+	for (int i = 0; i < 4; i++)
+	{
+		for (int j = 0; j<4; j++)
+		{
+			printf("%f,", data[i * 4 + j]);
+		}
+		printf("\n");
+	}
+
+*/
+	//auto source_actor = createActorFromPolyData(source_polydata, "red", 0.9);
+	//auto pre_aligned_source_actor = createActorFromPolyData(icp_trans_form_filter->GetOutput(), "yellow", 0.8);
+
+	//auto target_actor = createActorFromPolyData(target_polydata, "Cornsilk", 0.9);
+	//auto top_points_actors = createPointsActor(top_points, 0.3, 1.0, "red");
+	//auto left_points_actors = createPointsActor(left_points, 0.3, 1.0, "green");
+	//auto right_points_actors = createPointsActor(right_points, 0.3, 1.0, "blue");
+
+	//std::vector<vtkSmartPointer<vtkActor>> all_actors;
+	//all_actors.push_back(target_actor);
+	//all_actors.push_back(pre_aligned_source_actor);
+	//all_actors.insert(all_actors.end(), top_points_actors.begin(), top_points_actors.end());
+	//all_actors.insert(all_actors.end(), left_points_actors.begin(), left_points_actors.end());
+	//all_actors.insert(all_actors.end(), right_points_actors.begin(), right_points_actors.end());
+	//showActors(all_actors);
+
+
+
+
+}
 
 void pedicleSurgeryPlanning(std::vector<float>& top_points, std::vector<float>& left_points, std::vector<float>& right_points,
 	vtkSmartPointer<vtkPolyData> spine_poly_data, std::string window_name, std::string save_axis_dir, std::string save_png_dir)
@@ -1303,7 +1945,7 @@ void pedicleSurgeryPlanning(std::vector<float>& top_points, std::vector<float>& 
 	clock_t end1 = clock();
 	std::cout << "create bound points used:" << double(end1 - end0) / CLOCKS_PER_SEC 
 		<< "/" << double(end1 - start) / CLOCKS_PER_SEC << std::endl;
-	//############### ½«ÇĞÃæµÄÖĞĞÄµã£¬Ìæ»»Ö®Ç°ÓÉ4¸öÌØÕ÷µãÄâºÏµÄÖĞĞÄµã   #############
+	//############### å°†åˆ‡é¢çš„ä¸­å¿ƒç‚¹ï¼Œæ›¿æ¢ä¹‹å‰ç”±4ä¸ªç‰¹å¾ç‚¹æ‹Ÿåˆçš„ä¸­å¿ƒç‚¹   #############
 	if (getDistanceOfTwoPoints(left_cut_plane_center, left_cut_center) < TwoCentersDistanceThreshold)
 	{
 		left_cut_plane_center = left_cut_center;
@@ -1370,7 +2012,7 @@ void pedicleSurgeryPlanning(std::vector<float>& top_points, std::vector<float>& 
 		right_bound_points_min = right_bound_points_min1;
 	}
 
-	//############step1_3:  ¸üĞÂ×µ¹­¸ù×ø±êÏµºÍÖĞĞÄµã  ##############
+	//############step1_3:  æ›´æ–°æ¤å¼“æ ¹åæ ‡ç³»å’Œä¸­å¿ƒç‚¹  ##############
 	std::vector<float> left_axis_normalX_new, left_axis_normalY_new, left_axis_normalZ_new;
 
 	if (left_rotate_matrix_min1.size() > 0)
@@ -1438,7 +2080,7 @@ void pedicleSurgeryPlanning(std::vector<float>& top_points, std::vector<float>& 
 		right_bound_points_min = right_bound_points_min2;
 	}
 
-	//############step2_3:  ¸üĞÂ×µ¹­¸ù×ø±êÏµºÍÖĞĞÄµã  ##############
+	//############step2_3:  æ›´æ–°æ¤å¼“æ ¹åæ ‡ç³»å’Œä¸­å¿ƒç‚¹  ##############
 	std::vector<float> left_axis_normalX_new2, left_axis_normalY_new2, left_axis_normalZ_new2;
 
 	if (left_rotate_matrix_min2.size() > 0)
@@ -1476,7 +2118,7 @@ void pedicleSurgeryPlanning(std::vector<float>& top_points, std::vector<float>& 
 	std::cout << "rotate around Z used:" << double(end3 - end2) / CLOCKS_PER_SEC 
 		<< "/" << double(end3 - start) / CLOCKS_PER_SEC << std::endl;
 
-	//############step3_1: ÑØ×ÅyÖá·½ÏòËÑË÷×îĞ¡½ØÃæ ##############
+	//############step3_1: æ²¿ç€yè½´æ–¹å‘æœç´¢æœ€å°æˆªé¢ ##############
 	std::vector<float> left_bound_points_min3;
 	std::vector<float> left_center_min3;
 	float left_cut_plane_area_min3 = 0.0;
@@ -1489,7 +2131,7 @@ void pedicleSurgeryPlanning(std::vector<float>& top_points, std::vector<float>& 
 	getTheMinCutPlaneAreaAlongAxisY(right_cut_plane_area_min3, right_bound_points_min3,
 		right_center_min3, right_cut_plane_center, right_cut_plane_normal, spine_poly_data);
 
-	//############step3_2: ¸üĞÂ½ØÃæÖĞĞÄµã   ##############
+	//############step3_2: æ›´æ–°æˆªé¢ä¸­å¿ƒç‚¹   ##############
 	if (getDistanceOfTwoPoints(left_center_min3, left_cut_plane_center) < TwoCentersDistanceThreshold)
 	{
 		left_cut_plane_center = left_center_min3;
@@ -1511,10 +2153,10 @@ void pedicleSurgeryPlanning(std::vector<float>& top_points, std::vector<float>& 
 	}
 
 	clock_t end4 = clock();
-	std::cout << "ÑØ×Å YÖáËÑË÷×îĞ¡½ØÃæÓÃÊ± used:" << double(end4 - end3) / CLOCKS_PER_SEC 
+	std::cout << "æ²¿ç€ Yè½´æœç´¢æœ€å°æˆªé¢ç”¨æ—¶ used:" << double(end4 - end3) / CLOCKS_PER_SEC 
 		<<"/"<< double(end4 - start)/ CLOCKS_PER_SEC << std::endl;
 
-	//############## step4: ¼ì²é×ó¡¢ÓÒ×µ¹­¸ù×ø±êÏµµÄ·½Ïò  #############
+	//############## step4: æ£€æŸ¥å·¦ã€å³æ¤å¼“æ ¹åæ ‡ç³»çš„æ–¹å‘  #############
 	float left_flag = (top_points_center[0] - left_cut_plane_center[0]) * left_axis_normalY_new2[0] +
 		(top_points_center[1] - left_cut_plane_center[1]) * left_axis_normalY_new2[1] +
 		(top_points_center[2] - left_cut_plane_center[2]) * left_axis_normalY_new2[2];
@@ -1555,7 +2197,7 @@ void pedicleSurgeryPlanning(std::vector<float>& top_points, std::vector<float>& 
 	auto left_cut_plane_center_actor = createSphereActor(left_cut_plane_center, 2.0, 1.0, "green");
 	auto right_cut_plane_center_actor = createSphereActor(right_cut_plane_center, 2.0, 1.0, "blue");
 
-	//step5:½¨Á¢¼¹Öù×ø±êÏµ£¬¼¹Öù×ø±êÏµµÄZ·½ÏòÊÇ£¬top_pointsÄâºÏµÄÆ½ÃæµÄ·¨Ïò·½Ïò
+	//step5:å»ºç«‹è„ŠæŸ±åæ ‡ç³»ï¼Œè„ŠæŸ±åæ ‡ç³»çš„Zæ–¹å‘æ˜¯ï¼Œtop_pointsæ‹Ÿåˆçš„å¹³é¢çš„æ³•å‘æ–¹å‘
 	std::vector<float> top_fit_plane_normal;
 	vtkSmartPointer<vtkActor> top_fit_plane_actor;
 	std::vector<float> top_fit_plane_center;
@@ -1603,10 +2245,10 @@ void pedicleSurgeryPlanning(std::vector<float>& top_points, std::vector<float>& 
 	auto spine_axis_actors = createAxisActors(spine_axis_center, spine_axis_normalX, spine_axis_normalY, spine_axis_normalZ);
 
 	clock_t end5 = clock();
-	std::cout << "½¨Á¢¼¹Öù×ø±êÏµÓÃÊ±:" << double(end5 - end4) / CLOCKS_PER_SEC
+	std::cout << "å»ºç«‹è„ŠæŸ±åæ ‡ç³»ç”¨æ—¶:" << double(end5 - end4) / CLOCKS_PER_SEC
 		<< "/" << double(end5 - start) / CLOCKS_PER_SEC << std::endl;
 
-	//############ step6_1:¼ÆËã×µ¹­¸ùÍ¨µÀ·¨Ïò  #############
+	//############ step6_1:è®¡ç®—æ¤å¼“æ ¹é€šé“æ³•å‘  #############
 	float rot_angle = 15;
 
 	left_angle = getAngleOfCutPlaneNormalAndSpineAxisNormalX(left_cut_plane_center, left_cut_plane_normal,
@@ -1642,10 +2284,10 @@ void pedicleSurgeryPlanning(std::vector<float>& top_points, std::vector<float>& 
 	auto pedicle_pipeline_actor_R = createLineActorByPoints(right_point0, right_point1, 4.0, "yellow");
 
 	clock_t end6 = clock();
-	std::cout << "½¨Á¢×µ¹­¸ùÍ¨µÀ·½ÏòÓÃÊ±:" << double(end6 - end5) / CLOCKS_PER_SEC
+	std::cout << "å»ºç«‹æ¤å¼“æ ¹é€šé“æ–¹å‘ç”¨æ—¶:" << double(end6 - end5) / CLOCKS_PER_SEC
 		<< "/" << double(end6 - start) / CLOCKS_PER_SEC << std::endl;
 
-	//############ step6_2:¼ÆËã×µ¹­¸ùÍ¨µÀ·¨ÏòÓë×µÌå½»µã  #############
+	//############ step6_2:è®¡ç®—æ¤å¼“æ ¹é€šé“æ³•å‘ä¸æ¤ä½“äº¤ç‚¹  #############
 
 	auto left_intersect_points = getIntersectPointsFromLineAndPolyData(left_point0, left_point1, spine_poly_data);
 	std::vector<float> left_intersect_point0;
@@ -1688,7 +2330,7 @@ void pedicleSurgeryPlanning(std::vector<float>& top_points, std::vector<float>& 
 	}
 
 	clock_t end7 = clock();
-	std::cout << "×µ¹­¸ùÍ¨µÀ·¨ÏòÓë×µÌå½»µãÓÃÊ±:" << double(end7 - end6) / CLOCKS_PER_SEC
+	std::cout << "æ¤å¼“æ ¹é€šé“æ³•å‘ä¸æ¤ä½“äº¤ç‚¹ç”¨æ—¶:" << double(end7 - end6) / CLOCKS_PER_SEC
 		<< "/" << double(end7 - start) / CLOCKS_PER_SEC << std::endl;
 
 	all_actors.push_back(spine_actor);
@@ -1723,7 +2365,7 @@ void pedicleSurgeryPlanning(std::vector<float>& top_points, std::vector<float>& 
 	saveSpineSurgicalPlanning2Png(all_actors, spine_axis_center, spine_axis_normalX, spine_axis_normalY, spine_axis_normalZ, save_png_file);
 
 	clock_t end8 = clock();
-	std::cout << "±£´æÍ¼Æ¬ÓÃÊ±:" << double(end8 - end7) / CLOCKS_PER_SEC
+	std::cout << "ä¿å­˜å›¾ç‰‡ç”¨æ—¶:" << double(end8 - end7) / CLOCKS_PER_SEC
 		<< "/" << double(end8 - start) / CLOCKS_PER_SEC << std::endl;
 
 }

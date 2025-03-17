@@ -1,4 +1,4 @@
-#include <open3d/Open3D.h>
+﻿#include <open3d/Open3D.h>
 #include <iostream>
 #include <Eigen/Dense>
 #include <algorithm>
@@ -12,33 +12,43 @@
 #include <iostream>
 
 
-bool fileExists(const std::string& fileName) 
+bool fileExists(const std::string &file_name) 
 {
-	std::ifstream infile(fileName);
-	return infile.good();
+	std::ifstream file(file_name.c_str());
+	return file.good();
 }
 
 
 int main(int argc, char* argv[])
 {
 	int status;
-	assert(argc >= 3);
+	//assert(argc >= 3);
 	std::string stl_dir = argv[1];
 	std::string save_png_dir = argv[2];
+	//std::string aim_label = argv[3];
 	bool use_cuda = true;
 
-	if (argc > 3)
+	/*if (argc > 3)
 	{
 		std::string engine_mode = argv[3];
 		if (engine_mode == "cpu")
 		{
 			use_cuda = false;
 		}
+	}*/
+	
+	
+	//std::string png_dir = "E:/data/DeepSpineData/Verse/stl";
+	std::vector<std::string> png_names = list_directory(stl_dir);
+	std::vector<std::string> stl_names;
+	for (int i = 0; i < png_names.size(); i++)
+	{
+		auto png_name = png_names[i];
+		std::string cur_label = png_name.substr(png_name.size() - 6, 2);
+		//if (cur_label != aim_label) { continue; }
+		stl_names.push_back(png_name.replace(png_name.size() - 4, 4, ".stl"));
 	}
-	
-	
 
-	std::vector<std::string> stl_names = list_directory(stl_dir);
 	std::cout << "stl file count " << stl_names.size() << std::endl;
 	int count = 0;
 	for (int i = 0; i < stl_names.size(); i++)
@@ -49,23 +59,29 @@ int main(int argc, char* argv[])
 		std::string save_png_file = save_png_dir + "/" + tmp.replace(tmp.size() - 4, 4, ".png");
 		if (fileExists(save_png_file)) { continue; }
 
+		
+		std::string cur_label = stl_name.substr(stl_name.size() - 6, 2);
+		std::cout << "cur label:" << cur_label << std::endl;
+
+		if (cur_label == "25") { cur_label = "24"; }
+
 		std::string stl_file = stl_dir +std::string("/")+stl_name;
 		std::cout << stl_file << std::endl;
 
 		Eigen::MatrixXd spine_points_eigen = getPointsFromSTL(stl_file, POINT_NUM);
-		std::vector<float> spine_points_vector = matrixToVector(spine_points_eigen);
+		std::vector<float> spine_points = matrixToVector(spine_points_eigen);
 
 
-		std::vector<int> output_label;
+		/*std::vector<int> output_label;
 		std::vector<float> spine_points_vector_normal;
-		spine_points_vector_normal = pointCloudNormalize(spine_points_vector);
+		spine_points_vector_normal = pointCloudNormalize(spine_points);
 		output_label = classfier(spine_points_vector_normal, use_cuda);
-		std::cout << "classfier done!" << std::endl;
+		std::cout << "classfier done!" << std::endl;*/
 
 		std::vector<float> spine_top_points, spine_left_points, spine_right_points;
-		spine_top_points = getAimPoints(spine_points_vector, output_label, SPINE_POINT_LABEL::TOP);
-		spine_left_points = getAimPoints(spine_points_vector, output_label, SPINE_POINT_LABEL::LEFT);
-		spine_right_points = getAimPoints(spine_points_vector, output_label, SPINE_POINT_LABEL::RIGHT);
+		/*spine_top_points = getAimPoints(spine_points, output_label, SPINE_POINT_LABEL::TOP);
+		spine_left_points = getAimPoints(spine_points, output_label, SPINE_POINT_LABEL::LEFT);
+		spine_right_points = getAimPoints(spine_points, output_label, SPINE_POINT_LABEL::RIGHT);*/
 
 
 
@@ -87,8 +103,12 @@ int main(int argc, char* argv[])
 		//all_actors.insert(all_actors.end(), left_points_actor.begin(), left_points_actor.end());
 		//all_actors.insert(all_actors.end(), right_points_actor.begin(), right_points_actor.end());
 
-		//showActors(all_actors);
+		//showActors(all_actors,stl_name);
+		registrationPolydata(cur_label, "./data/template_stl", spine_poly_data, spine_points, spine_left_points, spine_right_points, spine_top_points);
+
 		clock_t start = clock();
+		if (spine_top_points.size() < 3 * 3 | spine_left_points.size() < 3 * 3 | spine_right_points.size() < 3 * 3) { continue; }
+
 		pedicleSurgeryPlanning(spine_top_points, spine_left_points, spine_right_points, spine_poly_data, stl_name, "./data/axis", save_png_dir);
 		clock_t end = clock();
 		double duration = double(end - start) / CLOCKS_PER_SEC;
@@ -97,7 +117,7 @@ int main(int argc, char* argv[])
 		std::cout << "sum used " << sum_time << std::endl;
 		std::cout << std::endl;
 		count += 1;
-		//if (count > 5)
+		////if (count > 5)
 		//	break;
 	}
 
