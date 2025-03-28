@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 #include <open3d/Open3D.h>
 #include <iostream>
 #include <Eigen/Dense>
@@ -29,14 +29,26 @@
 #endif
 #include <stdexcept>
 
+//#define PI 3.1415926
+//#define TwoCentersDistanceThreshold 5.0
+//#define CrossAngleThreshold 60.0  //åˆ‡é¢æ³•å‘ä¸å‚è€ƒæ³•å‘ä¹‹é—´çš„å¤¹è§’é˜ˆå€¼
+//#define SearchRotateAngle 60.0    //æœ€å°æˆªé¢æœç´¢çš„æ—¶å€™ï¼Œæœç´¢çš„è§’åº¦èŒƒå›´-SearchRotateAngle ~ SearchRotateAngle
+//#define CutPlaneAreaThreshold 10.0 //æ¤å¼“æ ¹é€šé“æœ€å°æˆªé¢çš„é¢ç§¯é˜ˆå€¼ 10mm^2
+//#define CutBoundPointsThreshold 20 //æ¤å¼“æ ¹é€šé“æˆªé¢çš„äº¤ç‚¹ä¸ªæ•°çš„é˜ˆå€¼ 20ä¸ª
+//#define SearchAlongAxisYStep 5.0   //æ²¿ç€åˆ‡é¢æ³•å‘æ³•å‘æœ€å°æˆªé¢æœç´¢çš„æœ€å¤§èŒƒå›´ï¼Œé»˜è®¤ä¸TwoCenterDistanceThresholdç›¸ç­‰
+//#define PolyDataDownSampleNumPolyThreshold 50000 //å¯¹spine poly è¿›è¡Œé™é‡‡æ ·ï¼Œå½“polyçš„ä¸ªæ•°è¶…è¿‡50000çš„æ—¶å€™è¿›è¡Œå¤„ç†
+
 #define PI 3.1415926
 #define TwoCentersDistanceThreshold 5.0
-#define CrossAngleThreshold 60.0  //ÇĞÃæ·¨ÏòÓë²Î¿¼·¨ÏòÖ®¼äµÄ¼Ğ½ÇãĞÖµ
-#define SearchRotateAngle 60.0    //×îĞ¡½ØÃæËÑË÷µÄÊ±ºò£¬ËÑË÷µÄ½Ç¶È·¶Î§-SearchRotateAngle ~ SearchRotateAngle
-#define CutPlaneAreaThreshold 10.0 //×µ¹­¸ùÍ¨µÀ×îĞ¡½ØÃæµÄÃæ»ıãĞÖµ 10mm^2
-#define CutBoundPointsThreshold 20 //×µ¹­¸ùÍ¨µÀ½ØÃæµÄ½»µã¸öÊıµÄãĞÖµ 20¸ö
-#define SearchAlongAxisYStep 5.0   //ÑØ×ÅÇĞÃæ·¨Ïò·¨Ïò×îĞ¡½ØÃæËÑË÷µÄ×î´ó·¶Î§£¬Ä¬ÈÏÓëTwoCenterDistanceThresholdÏàµÈ
-#define PolyDataDownSampleNumPolyThreshold 50000 //¶Ôspine poly ½øĞĞ½µ²ÉÑù£¬µ±polyµÄ¸öÊı³¬¹ı50000µÄÊ±ºò½øĞĞ´¦Àí
+#define CrossAngleThreshold 60.0  //åˆ‡é¢æ³•å‘ä¸å‚è€ƒæ³•å‘ä¹‹é—´çš„å¤¹è§’é˜ˆå€¼
+#define SearchRotateAngle 60.0    //æœ€å°æˆªé¢æœç´¢çš„æ—¶å€™ï¼Œæœç´¢çš„è§’åº¦èŒƒå›´-SearchRotateAngle ~ SearchRotateAngle
+#define CutPlaneAreaThreshold 10.0 //æ¤å¼“æ ¹é€šé“æœ€å°æˆªé¢çš„é¢ç§¯é˜ˆå€¼ 10mm^2
+#define CutBoundPointsThreshold 20 //æ¤å¼“æ ¹é€šé“æˆªé¢çš„äº¤ç‚¹ä¸ªæ•°çš„é˜ˆå€¼ 20ä¸ª
+#define SearchAlongAxisYStep 5.0   //æ²¿ç€åˆ‡é¢æ³•å‘æ³•å‘æœ€å°æˆªé¢æœç´¢çš„æœ€å¤§èŒƒå›´ï¼Œé»˜è®¤ä¸TwoCenterDistanceThresholdç›¸ç­‰
+#define PolyDataDownSampleNumPolyThreshold 50000 //å¯¹spine poly è¿›è¡Œé™é‡‡æ ·ï¼Œå½“polyçš„ä¸ªæ•°è¶…è¿‡50000çš„æ—¶å€™è¿›è¡Œå¤„ç†
+#define PedicleCrossAngle 15.0 //æ¤å¼“æ ¹é€šé“çš„å¤¹è§’
+#define PediclePiplelineRate 0.8  //èºé’‰é•¿åº¦å æ•´ä¸ªæ¤å¼“æ ¹é€šé“çš„æ¯”ä¾‹
+#define PedicleScrewRadius 1.5  //èºé’‰çš„åŠå¾„ï¼Œå•ä½mm
 
 enum SPINE_POINT_LABEL {TOP=1, LEFT=2, RIGHT=3};
 
@@ -63,10 +75,10 @@ vtkSmartPointer<vtkActor> createActorFromPolyData(vtkSmartPointer<vtkPolyData> p
 void showActors(std::vector<vtkSmartPointer<vtkActor> > actors, const std::string& window_name = "show spine");
 
 vtkSmartPointer<vtkActor> createSphereActor(std::vector<float>& point, float radius, float opacity = 0.5, const vtkStdString &color = "Cornsilk");
-std::vector<vtkSmartPointer<vtkActor>> createPointsActor(std::vector<float>& points, float radius = 1.0, float opacity = 0.5, const vtkStdString &color = "Cornsilk");
+std::vector<vtkSmartPointer<vtkActor>> createPointsActor(const std::vector<float>& points, float radius = 1.0, float opacity = 0.5, const vtkStdString &color = "Cornsilk");
 std::vector<float> getAimPoints(const std::vector<float>& points, const std::vector<int>& labels, SPINE_POINT_LABEL aim_label);
 
-std::vector<float> getPointsMean(std::vector<float>& points);
+std::vector<float> getPointsMean(const std::vector<float>& points);
 
 void fitPlaneFromPointsBySVD(std::vector<float>& fit_plane_center, std::vector<float>& fit_plane_normal ,const std::vector<float>& points);
 
@@ -96,7 +108,7 @@ float getDistanceOfTwoPoints(const std::vector<float>& point0, const std::vector
 std::vector<float> getProjectedPointOnPlane(const std::vector<float>& source_point, const std::vector<float>& plane_normal, const std::vector<float>& plane_center);
 std::vector<float> getTwoVectorCrossValue(const std::vector<float>& vector0, const std::vector<float>& vector1);
 std::vector<vtkSmartPointer<vtkActor>> createAxisActors(const std::vector<float>& axis_origin, const std::vector<float>& axis_normalX,
-	const std::vector<float>& axis_normalY, const std::vector<float>& axis_normalZ);
+	const std::vector<float>& axis_normalY, const std::vector<float>& axis_normalZ, float len=30.0);
 
 void getTheMinCutPlaneArea(float& cut_plane_area_min, std::vector<float>& bound_points_min, std::vector<std::vector<float>>& rotate_matrix_min, 
 	std::vector<float>& center_min, const std::vector<float>& rotate_normal, const std::vector<float>& target_normal, 
@@ -107,7 +119,7 @@ void getTheMinCutPlaneArea(float& cut_plane_area_min, std::vector<float>& bound_
 std::vector<std::vector<float>> createRotateMatrixAroundNormal(const std::vector<float>& rotate_normal, float rotate_angle=0.0);
 //Eigen::Matrix3f createRotateMatrixAroundNormal2(Eigen::Vector3f normal, float angle);
 std::vector<float> getVectorDotMatrixValue(const std::vector<float>& normal, const std::vector<std::vector<float>>& rotate_matrix);
-void getTheMinCutPlaneAreaAlongAxisY(float& cut_plane_min_area, std::vector<float>& bound_points_min, std::vector<float>& center_min,
+void getTheMinCutPlaneAreaAlongAxisY(float& cut_plane_area_min, std::vector<float>& bound_points_min, std::vector<float>& center_min,
 	const std::vector<float>& target_center, const std::vector<float>& target_normal, vtkSmartPointer<vtkPolyData> target_poly_data, 
 	float max_step = SearchAlongAxisYStep);
 
@@ -128,6 +140,36 @@ void saveSpineSurgicalPlanning2Png(std::vector<vtkSmartPointer<vtkActor>> all_ac
 
 float getAngleOfCutPlaneNormalAndSpineAxisNormalX(const std::vector<float>& cut_plane_center, const std::vector<float>& cut_plane_normal,
 	const std::vector<float>& axis_origin, const std::vector<float>& axis_normalZ, const std::vector<float>& axis_normalX);
+
+void registrationPolydata(const std::string& label_name, const std::string& template_stl_dir, const vtkSmartPointer<vtkPolyData> target_polydata, 
+	const std::vector<float>& target_points, std::vector<float>& left_points,std::vector<float>& right_points, std::vector<float>& top_points);
+bool loadLandmarksFromFile(const std::string& landmark_file, std::vector<float>& top_points, std::vector<float>& left_points,
+	std::vector<float>& right_points);
+
+vtkSmartPointer<vtkMatrix4x4> preAlignedTwoPointClouds(const std::vector<float>& source_points, const std::vector<float>& target_points,
+	std::vector<std::vector<float>>& source_eigen_vectors, std::vector<std::vector<float>>& target_eigen_vectors);
+
+void PCA(const std::vector<float> points, std::vector<float>& eigen_values, std::vector<std::vector<float>>& eigen_vectors, 
+	std::vector<float>& points_center);
+
+std::vector<float> pointsDecenter(const std::vector<float>& points, const std::vector<float>& center);
+
+std::vector<float> getTheMaxAxisPoint(const std::vector<float>& points);
+std::vector<float> getTheMinAxisPoint(const std::vector<float>& points);
+std::vector<float> getPointsDotMatrix(const std::vector<float>& points, const std::vector<std::vector<float>>& matrix);
+std::vector<std::vector<float>> matrix4DotMatrix4(const std::vector<std::vector<float>>& matrix1, const std::vector<std::vector<float>>& matrix2);
+void printMatrix(const std::vector<std::vector<float>>& matrix);
+
+vtkSmartPointer<vtkMatrix4x4> convertVectorMatrix3x3TovtkMatrix4x4(const std::vector<std::vector<float>>& matrix);
+void vectorPointsDotvtkMatrix4x4(const std::vector<float>& points, const vtkSmartPointer<vtkMatrix4x4> left_matrix, std::vector<float>& points_new);
+
+void getTheMinDistanceOfR(const std::vector<float>& source_points_decenter, const std::vector<std::vector<float>>& source_eigen_vectors,
+	const std::vector<float>& target_points_decenter, const std::vector<std::vector<float>>& target_eigen_vectors,
+	const std::vector<std::vector<std::vector<float>>>& R, int& min_index, float& min_distance, bool use_icp=false);
+
+void showAllActors(std::vector<std::vector<vtkSmartPointer<vtkActor>>>& all_actors, const std::string& window_name);
+void showAllActors3(std::vector<std::vector<vtkSmartPointer<vtkActor>>>& all_actors, const std::string& window_name);
+std::vector<float> ICP(const std::vector<float>& source_points, const std::vector<float>& target_points);
 
 
 

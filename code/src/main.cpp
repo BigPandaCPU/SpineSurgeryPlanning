@@ -6,11 +6,11 @@
 #include <vector>
 #include <fstream>
 #include "stdio.h"
-#include "loadonnx.h"
-#include "vtk_tools.h"
 #include <ctime>
 #include <iostream>
-
+#include "PedicleSurgeryPlanning.h"
+#include "SpinePointCloudSeg.h"
+#include "SpineRegistrationICP.h"
 
 bool fileExists(const std::string &file_name) 
 {
@@ -37,59 +37,67 @@ int main(int argc, char* argv[])
 		}
 	}*/
 	
-	
-	//std::string png_dir = "E:/data/DeepSpineData/Verse/stl";
-	std::vector<std::string> png_names = list_directory(stl_dir);
+	std::vector<std::string> png_names = list_directory(stl_dir);/*{ "sub-verse082_seg-vert_msk_label_09.stl"};*/
 	std::vector<std::string> stl_names;
+
 	for (int i = 0; i < png_names.size(); i++)
 	{
 		auto png_name = png_names[i];
-		std::string cur_label = png_name.substr(png_name.size() - 6, 2);
+		string cur_label = png_name.substr(png_name.size() - 6, 2);
 		//if (cur_label != aim_label) { continue; }
 		stl_names.push_back(png_name.replace(png_name.size() - 4, 4, ".stl"));
 	}
 
 	std::cout << "stl file count " << stl_names.size() << std::endl;
 	int count = 0;
+	string method = string("ICP");
+
 	for (int i = 0; i < stl_names.size(); i++)
 	{
 		clock_t start0 = clock();
 		auto stl_name = stl_names[i];
 		auto tmp = stl_names[i];
 		std::string save_png_file = save_png_dir + "/" + tmp.replace(tmp.size() - 4, 4, ".png");
-		if (fileExists(save_png_file)) { continue; }
+		//if (fileExists(save_png_file)) { continue; }
 
 		
 		std::string cur_label = stl_name.substr(stl_name.size() - 6, 2);
-		std::cout << "cur label:" << cur_label << std::endl;
-
+		//std::cout << "cur label:" << cur_label << std::endl;
+		//if (cur_label != "24") { continue; }
+	
 		if (cur_label == "25") { cur_label = "24"; }
+		if (cur_label == "28") { cur_label = "19"; }
 
 		std::string stl_file = stl_dir +std::string("/")+stl_name;
 		std::cout << stl_file << std::endl;
 
-		Eigen::MatrixXd spine_points_eigen = getPointsFromSTL(stl_file, POINT_NUM);
-		std::vector<float> spine_points = matrixToVector(spine_points_eigen);
-
-
-		/*std::vector<int> output_label;
-		std::vector<float> spine_points_vector_normal;
-		spine_points_vector_normal = pointCloudNormalize(spine_points);
-		output_label = classfier(spine_points_vector_normal, use_cuda);
-		std::cout << "classfier done!" << std::endl;*/
-
 		std::vector<float> spine_top_points, spine_left_points, spine_right_points;
-		/*spine_top_points = getAimPoints(spine_points, output_label, SPINE_POINT_LABEL::TOP);
-		spine_left_points = getAimPoints(spine_points, output_label, SPINE_POINT_LABEL::LEFT);
-		spine_right_points = getAimPoints(spine_points, output_label, SPINE_POINT_LABEL::RIGHT);*/
 
+		auto spine_poly_data = PedicleSurgeryPlanning::CreatePolyDataFromSTL(stl_file);
+		if (method == "PointNet")
+		{
+			Eigen::MatrixXd spine_points_eigen = PedicleSurgeryPlanning::GetPointsFromSTL(stl_file, POINT_NUM);
+			std::vector<float> spine_points = PedicleSurgeryPlanning::MatrixToVector(spine_points_eigen);
 
+			SpinePointCloudSeg *p = SpinePointCloudSeg::GetInstance(string("./checkpoints"), true);
+			auto output_label = p->Classfier(spine_points);
 
+			spine_top_points = SpinePointCloudSeg::GetAimPoints(spine_points, output_label, SpinePointCloudSeg::SPINE_POINT_LABEL::TOP);
+			spine_left_points = SpinePointCloudSeg::GetAimPoints(spine_points, output_label, SpinePointCloudSeg::SPINE_POINT_LABEL::LEFT);
+			spine_right_points = SpinePointCloudSeg::GetAimPoints(spine_points, output_label, SpinePointCloudSeg::SPINE_POINT_LABEL::RIGHT);
 
-		vtkSmartPointer<vtkPolyData> spine_poly_data = vtkSmartPointer<vtkPolyData>::New();
-		spine_poly_data = createPolyDataFromSTL(stl_file);
-
-
+		}
+		else
+		{
+			SpineRegistrationICP* icp = new SpineRegistrationICP(stl_file, cur_label, "./data/template_stl", 1000);
+			icp->Registration();
+			spine_top_points = icp->GetTargetTopPoints();
+			spine_left_points = icp->GetTargetLeftPoints();
+			spine_right_points = icp->GetTargetRightPoints();
+			//icp->ShowRegistrationResult();
+			delete icp;
+		}
+		
 		//std::string color = "LightSteelBlue";
 		//vtkSmartPointer<vtkActor> spine_actor = createActorFromSTL(stl_file, color);
 		//std::vector<vtkSmartPointer<vtkActor>> top_points_actor = createPointsActor(spine_top_points, 0.5, 1.0, "red");
@@ -104,15 +112,22 @@ int main(int argc, char* argv[])
 		//all_actors.insert(all_actors.end(), right_points_actor.begin(), right_points_actor.end());
 
 		//showActors(all_actors,stl_name);
-		registrationPolydata(cur_label, "./data/template_stl", spine_poly_data, spine_points, spine_left_points, spine_right_points, spine_top_points);
+		//registrationPolydata(cur_label, "./data/template_stl", spine_poly_data, spine_points, spine_left_points, spine_right_points, spine_top_points);
 
-		clock_t start = clock();
+		clock_t start1 = clock();
 		if (spine_top_points.size() < 3 * 3 | spine_left_points.size() < 3 * 3 | spine_right_points.size() < 3 * 3) { continue; }
 
-		pedicleSurgeryPlanning(spine_top_points, spine_left_points, spine_right_points, spine_poly_data, stl_name, "./data/axis", save_png_dir);
+		//pedicleSurgeryPlanning(spine_top_points, spine_left_points, spine_right_points, spine_poly_data, stl_name, "./data/axis", save_png_dir);
+		PedicleSurgeryPlanning* pedicle_plan = new PedicleSurgeryPlanning(spine_poly_data, spine_top_points, spine_left_points, spine_right_points);
+		pedicle_plan->Planning();
+		//pedicle_plan->CreateAndShowFinalActors();
+		delete pedicle_plan;
+
+		
 		clock_t end = clock();
-		double duration = double(end - start) / CLOCKS_PER_SEC;
+		double duration = double(end - start1) / CLOCKS_PER_SEC;
 		std::cout << "planing used " << duration << std::endl;
+
 		double sum_time = double(end - start0) / CLOCKS_PER_SEC;
 		std::cout << "sum used " << sum_time << std::endl;
 		std::cout << std::endl;

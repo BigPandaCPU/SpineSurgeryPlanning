@@ -17,6 +17,7 @@
 #include <vtkDecimatePro.h>
 #include <vtkWindowToImageFilter.h>
 #include <vtkCamera.h>
+#include <vtkPoints.h>
 #include <vtkPNGWriter.h>
 #include <vtkImageAppend.h>
 #include <vtkMatrix4x4.h>
@@ -26,6 +27,7 @@
 #include <vtkIterativeClosestPointTransform.h>
 #include <vtkInteractorStyleTrackballCamera.h>
 #include <vtkRenderWindowInteractor.h>
+#include <vtkVertexGlyphFilter.h>
 #include <limits>
 
 #include <vtkAutoInit.h>
@@ -408,16 +410,16 @@ vtkSmartPointer<vtkActor> createSphereActor(std::vector<float>& point, float rad
 	return actor;
 }
 
-std::vector<vtkSmartPointer<vtkActor>> createPointsActor(std::vector<float>& points, float radius, float opacity, const vtkStdString &color)
+std::vector<vtkSmartPointer<vtkActor>> createPointsActor(const std::vector<float>& points, float radius, float opacity, const vtkStdString &color)
 {
 	std::vector<vtkSmartPointer<vtkActor>> points_actor;
 	int num_points = points.size()/3;
 	for (int i = 0; i < num_points; i++)
 	{
-		std::vector<float> cur_point;
-		cur_point.push_back(points[i * 3 + 0]);
-		cur_point.push_back(points[i * 3 + 1]);
-		cur_point.push_back(points[i * 3 + 2]);
+		std::vector<float> cur_point(3);
+		cur_point[0] = points[i * 3 + 0];
+		cur_point[1] = points[i * 3 + 1];
+		cur_point[2] = points[i * 3 + 2];
 		vtkSmartPointer<vtkActor> cur_point_actor = createSphereActor(cur_point, radius, opacity, color);
 		points_actor.push_back(cur_point_actor);
 	}
@@ -491,14 +493,16 @@ void fitPlaneFromPointsBySVD(std::vector<float>& fit_plane_center, std::vector<f
 	Eigen::Vector3d normal;
 	normal = svd.matrixV().col(2);
 
+	fit_plane_normal = { float(normal[0]), float(normal[1]), float(normal[2]) };
 
-	fit_plane_normal.push_back(normal[0]);
+	/*fit_plane_normal.push_back(normal[0]);
 	fit_plane_normal.push_back(normal[1]);
-	fit_plane_normal.push_back(normal[2]);
+	fit_plane_normal.push_back(normal[2]);*/
 
-	fit_plane_center.push_back(centroid[0]);
-	fit_plane_center.push_back(centroid[1]);
-	fit_plane_center.push_back(centroid[2]);
+	fit_plane_center = {float(centroid[0]), float(centroid[1]), float(centroid[2])};
+	//fit_plane_center.push_back(centroid[0]);
+	//fit_plane_center.push_back(centroid[1]);
+	//fit_plane_center.push_back(centroid[2]);
 }
 
 
@@ -768,11 +772,11 @@ std::vector<float> getTwoVectorCrossValue(const std::vector<float>& vector0, con
 }
 
 std::vector<vtkSmartPointer<vtkActor>> createAxisActors(const std::vector<float>& axis_origin, const std::vector<float>& axis_normalX,
-	const std::vector<float>& axis_normalY, const std::vector<float>& axis_normalZ)
+	const std::vector<float>& axis_normalY, const std::vector<float>& axis_normalZ, float len)
 {
-	vtkSmartPointer<vtkActor> axis_normalX_actor = createLineActorByNormal( axis_origin, axis_normalX, 30.0, 3.0, "Red");
-	vtkSmartPointer<vtkActor> axis_normalY_actor = createLineActorByNormal( axis_origin, axis_normalY, 30.0, 3.0, "Green");
-	vtkSmartPointer<vtkActor> axis_normalZ_actor = createLineActorByNormal( axis_origin, axis_normalZ, 30.0, 3.0, "Blue");
+	vtkSmartPointer<vtkActor> axis_normalX_actor = createLineActorByNormal( axis_origin, axis_normalX, len, 3.0, "Red");
+	vtkSmartPointer<vtkActor> axis_normalY_actor = createLineActorByNormal( axis_origin, axis_normalY, len, 3.0, "Green");
+	vtkSmartPointer<vtkActor> axis_normalZ_actor = createLineActorByNormal( axis_origin, axis_normalZ, len, 3.0, "Blue");
 	std::vector<vtkSmartPointer<vtkActor>> axis_actors = { axis_normalX_actor, axis_normalY_actor, axis_normalZ_actor };
 	return axis_actors;
 }
@@ -843,8 +847,9 @@ void getTheMinCutPlaneArea(float& cut_plane_area_min, std::vector<float>& bound_
 std::vector<std::vector<float>> createRotateMatrixAroundNormal(const std::vector<float>& rotate_normal, float rotate_angle)
 {
 	/*
-	func:此函数的功能是，生成绕指定轴旋转的旋转矩阵，生成的旋转矩阵是右乘矩阵，point_new = point * Matrix.
-	左乘矩阵和右乘矩阵的定义:根据相乘时矩阵在哪一侧，该矩阵就称为对应侧的矩阵.
+	func:
+		此函数的功能是，生成绕指定轴旋转的旋转矩阵，生成的旋转矩阵是右乘矩阵，point_new = point * Matrix.
+		左乘矩阵和右乘矩阵的定义:根据相乘时矩阵在哪一侧，该矩阵就称为对应侧的矩阵.
 	*/
 	std::vector<float> r = normalizeVector(rotate_normal);
 	float rotated_rad = rotate_angle / 180.0 * PI;
@@ -1455,6 +1460,336 @@ void printMatrix(const std::vector<std::vector<float>>& matrix)
 	//std::cout << matrix[2][0] << "," << matrix[2][1] << "," << matrix[2][2] << "," << matrix[2][3] << std::endl;
 	//std::cout << matrix[3][0] << "," << matrix[3][1] << "," << matrix[3][2] << "," << matrix[3][3] << std::endl;
 }
+void showAllActors(std::vector<std::vector<vtkSmartPointer<vtkActor>>>& all_actors, const std::string& window_name)
+{
+	// 创建渲染器
+	vtkSmartPointer<vtkRenderer> left_ren = vtkSmartPointer<vtkRenderer>::New();
+	vtkSmartPointer<vtkRenderer> right_ren = vtkSmartPointer<vtkRenderer>::New();
+
+	// 将所有演员添加到渲染器中
+	for (auto actor : all_actors[0])
+	{
+		left_ren->AddActor(actor);
+	}
+	for (auto actor : all_actors[1])
+	{
+		right_ren->AddActor(actor);
+	}
+
+	double left_view_port[4] = { 0.0, 0.0, 0.5, 1.0 };
+	double right_view_port[4] = { 0.5, 0.0, 1.0, 1.0 };
+
+	left_ren->SetViewport(left_view_port);
+	right_ren->SetViewport(right_view_port);
+
+
+	// 设置背景颜色为白色
+	left_ren->SetBackground(1.0, 1.0, 1.0);
+	right_ren->SetBackground(0.5, 0.5, 0.5);
+
+	// 创建并配置渲染窗口
+	//vtkRenderWindow* win = vtkRenderWindow::New();
+	vtkSmartPointer<vtkRenderWindow> win = vtkSmartPointer<vtkRenderWindow>::New();
+	win->AddRenderer(left_ren);
+	win->AddRenderer(right_ren);
+	win->SetWindowName(window_name.c_str());
+
+	// 创建交互器
+	//vtkRenderWindowInteractor* iren = vtkRenderWindowInteractor::New();
+	vtkSmartPointer<vtkRenderWindowInteractor> iren = vtkSmartPointer<vtkRenderWindowInteractor>::New();
+	iren->SetRenderWindow(win);
+
+	// 设置交互器样式为TrackballCamera风格
+	//vtkInteractorStyleTrackballCamera* style = vtkInteractorStyleTrackballCamera::New();
+	vtkSmartPointer<vtkInteractorStyleTrackballCamera> style = vtkSmartPointer<vtkInteractorStyleTrackballCamera>::New();
+	iren->SetInteractorStyle(style);
+
+	// 重置视图以适应所有演员
+	left_ren->ResetCamera();
+	right_ren->ResetCamera();
+
+	// 渲染并启动交互循环
+	win->Render();
+	iren->Initialize();
+	iren->Start();
+}
+
+void showAllActors3(std::vector<std::vector<vtkSmartPointer<vtkActor>>>& all_actors, const std::string& window_name)
+{
+	// 创建渲染器
+	vtkSmartPointer<vtkRenderer> left_ren = vtkSmartPointer<vtkRenderer>::New();
+	vtkSmartPointer<vtkRenderer> middle_ren = vtkSmartPointer<vtkRenderer>::New();
+	vtkSmartPointer<vtkRenderer> right_ren = vtkSmartPointer<vtkRenderer>::New();
+
+	// 将所有演员添加到渲染器中
+	for (auto actor : all_actors[0])
+	{
+		left_ren->AddActor(actor);
+	}
+
+	for (auto actor : all_actors[1])
+	{
+		middle_ren->AddActor(actor);
+	}
+
+	for (auto actor : all_actors[2])
+	{
+		right_ren->AddActor(actor);
+	}
+
+	double left_view_port[4] = { 0.0, 0.0, 0.33, 1.0 };
+	double middle_view_port[4] = { 0.33, 0.0, 0.67, 1.0 };
+	double right_view_port[4] = { 0.67, 0.0, 1.0, 1.0 };
+
+	left_ren->SetViewport(left_view_port);
+	middle_ren->SetViewport(middle_view_port);
+	right_ren->SetViewport(right_view_port);
+
+
+	// 设置背景颜色为白色
+	left_ren->SetBackground(1.0, 1.0, 1.0);
+	middle_ren->SetBackground(0.75, 0.75, 0.75);
+	right_ren->SetBackground(0.5, 0.5, 0.5);
+
+	// 创建并配置渲染窗口
+	//vtkRenderWindow* win = vtkRenderWindow::New();
+	vtkSmartPointer<vtkRenderWindow> win = vtkSmartPointer<vtkRenderWindow>::New();
+	win->AddRenderer(left_ren);
+	win->AddRenderer(middle_ren);
+	win->AddRenderer(right_ren);
+	win->SetWindowName(window_name.c_str());
+
+	// 创建交互器
+	//vtkRenderWindowInteractor* iren = vtkRenderWindowInteractor::New();
+	vtkSmartPointer<vtkRenderWindowInteractor> iren = vtkSmartPointer<vtkRenderWindowInteractor>::New();
+	iren->SetRenderWindow(win);
+
+	// 设置交互器样式为TrackballCamera风格
+	//vtkInteractorStyleTrackballCamera* style = vtkInteractorStyleTrackballCamera::New();
+	vtkSmartPointer<vtkInteractorStyleTrackballCamera> style = vtkSmartPointer<vtkInteractorStyleTrackballCamera>::New();
+	iren->SetInteractorStyle(style);
+
+	// 重置视图以适应所有演员
+	left_ren->ResetCamera();
+	middle_ren->ResetCamera();
+	right_ren->ResetCamera();
+
+	// 渲染并启动交互循环
+	win->Render();
+	iren->Initialize();
+	iren->Start();
+}
+
+std::vector<float> ICP(const std::vector<float>& source_points, const std::vector<float>& target_points)
+{
+	auto source_points_vtk = vtkSmartPointer<vtkPoints>::New();
+	for (int i = 0; i < source_points.size() / 3; i++)
+	{
+		float x = source_points[i * 3 + 0];
+		float y = source_points[i * 3 + 1];
+		float z = source_points[i * 3 + 2];
+		source_points_vtk->InsertNextPoint(x, y, z);
+	}
+	auto target_points_vtk = vtkSmartPointer<vtkPoints>::New();
+	for (int i = 0; i < target_points.size()/3; i++)
+	{
+		float x = target_points[i * 3 + 0];
+		float y = target_points[i * 3 + 1];
+		float z = target_points[i * 3 + 2];
+		target_points_vtk->InsertNextPoint(x, y, z);
+	}
+	auto source = vtkSmartPointer<vtkPolyData>::New();
+	source->SetPoints(source_points_vtk);
+	auto target = vtkSmartPointer<vtkPolyData>::New();
+	target->SetPoints(target_points_vtk);
+
+	auto source_glyph = vtkSmartPointer<vtkVertexGlyphFilter>::New();
+	source_glyph->SetInputData(source);
+	source_glyph->Update();
+
+	auto target_glyph = vtkSmartPointer<vtkVertexGlyphFilter>::New();
+	target_glyph->SetInputData(target);
+	target_glyph->Update();
+
+	auto icp = vtkSmartPointer<vtkIterativeClosestPointTransform>::New();
+	icp->SetSource(source_glyph->GetOutput());
+	icp->SetTarget(target_glyph->GetOutput());
+	icp->GetLandmarkTransform()->SetModeToRigidBody();
+	icp->SetMaximumNumberOfIterations(50);
+	icp->StartByMatchingCentroidsOn();
+	icp->Modified();
+	icp->Update();
+
+
+	auto icp_trans_form_filter = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+	icp_trans_form_filter->SetInputData(source_glyph->GetOutput());
+	icp_trans_form_filter->SetTransform(icp);
+	icp_trans_form_filter->Update();
+
+	auto points = icp_trans_form_filter->GetOutput()->GetPoints();
+	size_t num_points = points->GetNumberOfPoints();
+	size_t data_size = num_points * 3;
+	std::vector<float> points_out(data_size);
+	for (size_t i = 0; i < num_points; ++i) 
+	{
+		double* point = points->GetPoint(i);
+		size_t index = i * 3;
+		points_out[index] = static_cast<float>(point[0]);
+		points_out[index + 1] = static_cast<float>(point[1]);
+		points_out[index + 2] = static_cast<float>(point[2]);
+	}
+	return points_out;
+}
+
+/*
+Func:
+	此函数的功能是获取在当前特征向量下，最小的变换R是的，两个点云之间的距离之和最小
+Input:
+	source_points_decenter:
+	source_eigen_vectors:
+*/
+void getTheMinDistanceOfR(const std::vector<float>& source_points_decenter, const std::vector<std::vector<float>>& source_eigen_vectors,
+	const std::vector<float>& target_points_decenter, const std::vector<std::vector<float>>& target_eigen_vectors,
+	const std::vector<std::vector<std::vector<float>>>& R, int& min_index, float& min_distance, bool use_icp)
+{
+	/*printf("\n target_eigen_vectors:\n");
+	printMatrix(target_eigen_vectors);*/
+	auto pre_aligned_source_points = getPointsDotMatrix(source_points_decenter, source_eigen_vectors);
+	auto pre_aligned_target_points = getPointsDotMatrix(target_points_decenter, target_eigen_vectors);
+
+
+
+
+	auto source_points_actors_pre_aligned = createPointsActor(pre_aligned_source_points, 0.7, 1.0, "yellow");
+	auto target_points_actors_pre_aligned = createPointsActor(pre_aligned_target_points, 0.7, 1.0, "red");
+	auto source_axis_actors_pre_aligned = createAxisActors({ 0.0, 0.0, 0.0 }, { 1.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0 }, {0.0, 0.0, 1.0}, 50.0);
+	auto target_axis_actors_pre_aligned = createAxisActors({ 0.0, 0.0, 0.0 }, { 1.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0 }, { 0.0, 0.0, 1.0 }, 75.0);
+
+	source_points_actors_pre_aligned.insert(source_points_actors_pre_aligned.end(), source_axis_actors_pre_aligned.begin(), source_axis_actors_pre_aligned.end());
+	target_points_actors_pre_aligned.insert(target_points_actors_pre_aligned.end(), target_axis_actors_pre_aligned.begin(), target_axis_actors_pre_aligned.end());
+	
+
+	
+
+	
+
+	auto target_max_point = getTheMaxAxisPoint(pre_aligned_target_points);
+	auto target_min_point = getTheMinAxisPoint(pre_aligned_target_points);
+
+
+	std::vector<float> target_bbox = { target_max_point[0] - target_min_point[0],
+									   target_max_point[1] - target_min_point[1],
+									   target_max_point[2] - target_min_point[2] };
+
+	std::vector<Eigen::Vector3d> points;
+	for (int i = 0; i < pre_aligned_target_points.size() / 3; i++)
+	{
+		double curX = pre_aligned_target_points[i * 3 + 0];
+		double curY = pre_aligned_target_points[i * 3 + 1];
+		double curZ = pre_aligned_target_points[i * 3 + 2];
+		points.push_back(Eigen::Vector3d(curX, curY, curZ));
+	}
+	open3d::geometry::PointCloud point_cloud(points);
+	open3d::geometry::KDTreeFlann  kd_tree(point_cloud);
+
+
+	double * all_distance = (double*)malloc(sizeof(double) * R.size());
+
+	for (int i = 0; i < R.size(); i++)
+	{
+		auto curR = R[i];
+		double cur_distance_sum = 0.0;
+		auto tmp_points = getPointsDotMatrix(pre_aligned_source_points, curR);
+
+		/*auto tmp_points_actors = createPointsActor(tmp_points, 0.7, 1.0, "yellow");
+		tmp_points_actors.insert(tmp_points_actors.end(), source_axis_actors_pre_aligned.begin(), source_axis_actors_pre_aligned.end());*/
+		
+		//showActors(tmp_points_actors, std::string(buff));
+
+		auto source_max_point = getTheMaxAxisPoint(tmp_points);
+		auto source_min_point = getTheMinAxisPoint(tmp_points);
+
+		std::vector<float> source_bbox = { source_max_point[0] - source_min_point[0],
+										   source_max_point[1] - source_min_point[1],
+										   source_max_point[2] - source_min_point[2] };
+
+		std::vector<std::vector<float>> scale_matrix = { {target_bbox[0] / source_bbox[0],0.0, 0.0},
+													 {0.0, target_bbox[1] / source_bbox[1],0.0},
+													 {0.0, 0.0, target_bbox[2] / source_bbox[2] } };
+		auto tmp_points_new = getPointsDotMatrix(tmp_points, scale_matrix);
+
+
+		std::vector<float> cur_points;
+		if (use_icp)
+		{
+			cur_points = ICP(tmp_points_new, pre_aligned_target_points);
+		}
+		else
+		{
+			cur_points = tmp_points_new;
+		}
+
+		std::vector<int> cur_indices;
+		std::vector<double> cur_distance;
+
+		for (int j = 0; j < cur_points.size() / 3; j++)
+		{
+			double curX = cur_points[j * 3 + 0];
+			double curY = cur_points[j * 3 + 1];
+			double curZ = cur_points[j * 3 + 2];
+			Eigen::Vector3d query_point(curX, curY, curZ);
+			kd_tree.SearchKNN(query_point, 3, cur_indices, cur_distance);
+			cur_distance_sum += sqrt((cur_distance[0]+cur_distance[1]+cur_distance[2])/3.0);
+		}
+		all_distance[i] = cur_distance_sum;
+
+
+	/*	printf("icp %d , distance %f\n", i, all_distance[i]);
+
+		char buff[50];
+		sprintf(buff, "icp %d, distance %f", i, all_distance[i]);
+
+		std::vector<std::vector<vtkSmartPointer<vtkActor>>> all_actors;
+		auto cur_points_actors = createPointsActor(cur_points, 0.6, 1.0, "yellow");
+		cur_points_actors.insert(cur_points_actors.end(), source_axis_actors_pre_aligned.begin(), source_axis_actors_pre_aligned.end());
+		all_actors.push_back(source_points_actors_pre_aligned);
+		all_actors.push_back(cur_points_actors);
+		all_actors.push_back(target_points_actors_pre_aligned);
+		if (i == 2 )
+		{
+			showAllActors3(all_actors, std::string(buff));
+		}*/
+
+
+		//auto cur_points_actors = createPointsActor(cur_points, 0.6, 1.0, "yellow");
+		//cur_points_actors.insert(cur_points_actors.end(), target_points_actors_pre_aligned.begin(), target_points_actors_pre_aligned.end());
+		//char buff[50];
+		//sprintf(buff, "after %d icp ,sum distance %f", i, cur_distance_sum);
+		//printf("icp %d , distance %f\n", i, all_distance[i]);
+		//if (i == 8) 
+		//{
+		//	showActors(cur_points_actors, std::string(buff));
+		//}
+		
+	}
+	/*printf("\n");
+	for (int i = 0; i < R.size(); i++)
+	{
+		
+	}
+*/
+	min_index = 0;
+	min_distance = all_distance[min_index];
+	for (int i = 1; i < R.size(); i++)
+	{
+		if (min_distance > all_distance[i])
+		{
+			min_index = i;
+			min_distance = all_distance[i];
+		}
+	}
+	free(all_distance);
+}
 
 /*
 	func：将source_points对齐到target_points
@@ -1473,109 +1808,216 @@ void printMatrix(const std::vector<std::vector<float>>& matrix)
 	:return:粗配准矩阵，std::vector<std::vector<float>>
 */
 vtkSmartPointer<vtkMatrix4x4> preAlignedTwoPointClouds(const std::vector<float>& source_points, const std::vector<float>& target_points,
-	std::vector<std::vector<float>>& source_pca_vectors, std::vector<std::vector<float>>& target_pca_vectors)
+	std::vector<std::vector<float>>& source_eigen_vectors, std::vector<std::vector<float>>& target_eigen_vectors)
 {
 	std::vector<float> source_eigen_values;
 	std::vector<float> source_center;
-	PCA(source_points, source_eigen_values, source_pca_vectors, source_center);
-	std::vector<std::vector<float>> source_eigen_vectors = source_pca_vectors;
 
+	PCA(source_points, source_eigen_values, source_eigen_vectors, source_center);
+	
 	std::vector<float> target_eigen_values;
 	std::vector<float> target_center;
-	PCA(target_points, target_eigen_values, target_pca_vectors, target_center);
-	std::vector<std::vector<float>> target_eigen_vectors = target_pca_vectors;
+	PCA(target_points, target_eigen_values, target_eigen_vectors, target_center);
 
 
+
+	//由于存在个别椎体的主轴和次轴的特征值大小相差不大，因此需要进行二次判断
+	const float T = sqrt(2.0) / 2.0;
+
+	std::vector<std::vector<float>> R0 = { {1.0, 0.0, 0.0},{0.0, 1.0, 0.0,},{0.0, 0.0, 1.0} };
+	std::vector<std::vector<float>> R1 = { {T, T, 0.0},{-T, T, 0.0,},{0.0, 0.0, 1.0} };  //45度
+	std::vector<std::vector<float>> R2 = { {0.0, 1.0, 0.0},{-1.0, 0.0, 0.0,},{0.0, 0.0, 1.0} }; //90度
+	std::vector<std::vector<float>> R3 = { {-T, T, 0.0},{-T, -T, 0.0,},{0.0, 0.0, 1.0} }; //135度
+	std::vector<std::vector<float>> R4 = { {-1.0, 0.0, 0.0},{0.0, -1.0, 0.0,},{0.0, 0.0, 1.0} }; //180度
+	std::vector<std::vector<float>> R5 = { {-T, -T, 0.0},{T, -T, 0.0},{0.0, 0.0, 1.0} }; //225度
+	std::vector<std::vector<float>> R6 = { {0.0, -1.0, 0.0},{1.0, 0.0, 0.0},{0.0, 0.0, 1.0} }; //270度
+	std::vector<std::vector<float>> R7 = { {T, -T, 0.0},{T, T, 0.0},{0.0, 0.0, 1.0} }; //315度
+
+	std::vector<std::vector<float>> R8 = { {0.0, 1.0, 0.0},{1.0, 0.0, 0.0,},{0.0, 0.0, -1.0} }; //反向0度
+	std::vector<std::vector<float>> R9 = { {T, T, 0.0},{T, -T, 0.0,},{0.0, 0.0, -1.0} }; //旋转45度
+	std::vector<std::vector<float>> R10 = { {1.0, 0.0, 0.0},{0.0, -1.0, 0.0,},{0.0, 0.0, -1.0} }; //旋转90度
+	std::vector<std::vector<float>> R11 = { {T, -T, 0.0},{-T, -T, 0.0,},{0.0, 0.0, -1.0} }; //旋转135度
+	std::vector<std::vector<float>> R12 = { {0.0, -1.0, 0.0},{-1.0, 0.0, 0.0,},{0.0, 0.0, -1.0} }; //旋转180度
+	std::vector<std::vector<float>> R13 = { {-T, -T, 0.0},{-T, T, 0.0,},{0.0, 0.0, -1.0} }; //旋转225度
+	std::vector<std::vector<float>> R14 = { {-1.0, 0.0, 0.0},{0.0, 1.0, 0.0,},{0.0, 0.0, -1.0} }; //旋转270度
+	std::vector<std::vector<float>> R15 = { {-T, T, 0.0},{T, T, 0.0,},{0.0, 0.0, -1.0} }; //旋转315度
+
+
+	//std::vector<std::vector<float>> R1 = { {1.0, 0.0, 0.0},{0.0, -1.0, 0.0,},{0.0, 0.0, -1.0} };
+	//std::vector<std::vector<float>> R2 = { {-1.0, 0.0, 0.0},{0.0, -1.0, 0.0,},{0.0, 0.0, 1.0} };
+	//std::vector<std::vector<float>> R3 = { {-1.0, 0.0, 0.0},{0.0, 1.0, 0.0,},{0.0, 0.0, -1.0} };
+	//std::vector<std::vector<float>> R4 = { {0.0, 1.0, 0.0},{-1.0, 0.0, 0.0,},{0.0, 0.0, 1.0} };
+	//std::vector<std::vector<float>> R5 = { {0.0, -1.0, 0.0},{1.0, 0.0, 0.0,},{0.0, 0.0, 1.0} };
+	//std::vector<std::vector<float>> R6 = { {0.0, 1.0, 0.0},{1.0, 0.0, 0.0,},{0.0, 0.0, -1.0} };
+	//std::vector<std::vector<float>> R7 = { {0.0, -1.0, 0.0},{-1.0, 0.0, 0.0,},{0.0, 0.0, -1.0} };
+
+	//std::vector<std::vector<float>> R4 = { {1.0, 0.0, 0.0},{0.0, 0.0, 1.0,},{0.0, -1.0, 0.0} };
+	//std::vector<std::vector<float>> R5 = { {1.0, 0.0, 0.0},{0.0, 0.0, -1.0,},{0.0, 1.0, 0.0} };
+
+	//std::vector<std::vector<float>> R6 = { {0.0, 0.0, -1.0},{0.0, 1.0, 0.0,},{1.0, 0.0, 0.0} };
+	//std::vector<std::vector<float>> R7 = { {0.0, 0.0, 1.0},{0.0, 1.0, 0.0,},{-1.0, 0.0, 0.0} };
+
+
+	
+	//std::vector<std::vector<float>> R10 = { {-1.0, 0.0, 0.0},{0.0, 0.0, 1.0,},{0.0, 1.0, 0.0} };
+	//std::vector<std::vector<float>> R11 = { {0.0, 0.0, 1.0},{0.0, -1.0, 0.0,},{1.0, 0.0, 0.0} };
+	
+
+	//std::vector<std::vector<float>> R13 = { {-1.0, 0.0, 0.0},{0.0, 0.0, -1.0,},{0.0, -1.0, 0.0} };
+	//std::vector<std::vector<float>> R14 = { {0.0, 0.0, -1.0},{0.0, -1.0, 0.0,},{-1.0, 0.0, 0.0} };
+
+
+	
 	auto source_points_decenter = pointsDecenter(source_points, source_center);
 	auto target_points_decenter = pointsDecenter(target_points, target_center);
+
+	int min_index = 0;
+	float min_distance = (std::numeric_limits<float>::max)();
+	std::vector<std::vector<std::vector<float>>> R;
+	bool use_icp = true;
+
+	//if ((target_eigen_values[0] - target_eigen_values[1]) < 0.4*target_eigen_values[0])
+	//{
+	//	int min_index0 = 0;
+	//	float min_distance0 = (std::numeric_limits<float>::max)();
+
+	//	int min_index1 = 0;
+	//	float min_distance1 = (std::numeric_limits<float>::max)();
+
+	//	std::vector<std::vector<float>> source_eigen_vectors0 = source_eigen_vectors_tmp;
+	//	std::vector<std::vector<float>> source_eigen_vectors1 = source_eigen_vectors0;
+	//	source_eigen_vectors1[0] = source_eigen_vectors0[1];
+	//	source_eigen_vectors1[1] = source_eigen_vectors0[0];
+
+
+	//	//printf("\n source_eigen_vectors0:\n");
+	//	//printMatrix(source_eigen_vectors0);
+	//	//printf("\n source_eigen_vectors1:\n");
+	//	//printMatrix(source_eigen_vectors1);
+
+
+
+
+	//	getTheMinDistanceOfR(source_points_decenter, source_eigen_vectors0, target_points_decenter,
+	//		target_eigen_vectors, R, min_index0, min_distance0);
+
+
+	//	getTheMinDistanceOfR(source_points_decenter, source_eigen_vectors1, target_points_decenter,
+	//		target_eigen_vectors, R, min_index1, min_distance1);
+	//	
+
+	//	if (min_distance0 < min_distance1)
+	//	{
+	//		source_eigen_vectors = source_eigen_vectors0;
+	//		min_index = min_index0;
+	//	}
+	//	else
+	//	{
+	//		source_eigen_vectors = source_eigen_vectors1;
+	//		min_index = min_index1;
+	//	}
+	//}
+	//else
+	//if ((target_eigen_values[0] - target_eigen_values[1]) < 0.4*target_eigen_values[0])
+	{
+		std::vector<std::vector<std::vector<float>>> R_tmp = { R0, R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R12, R13, R14, R15};
+		R = R_tmp;
+		use_icp = false;
+	}
+	/*else
+	{
+		std::vector<std::vector<std::vector<float>>> R_tmp = { R0, R1, R2, R3};
+		R = R_tmp;
+		use_icp = false;
+	}*/
+
+	getTheMinDistanceOfR(source_points_decenter, source_eigen_vectors, target_points_decenter,
+		target_eigen_vectors, R, min_index, min_distance, use_icp);
+	auto trans = R[min_index];
+
+	//auto source_max_point = getTheMaxAxisPoint(pre_aligned_source_points);
+	//auto source_min_point = getTheMinAxisPoint(pre_aligned_source_points);
+	//
+	//auto target_max_point = getTheMaxAxisPoint(pre_aligned_target_points);
+	//auto target_min_point = getTheMinAxisPoint(pre_aligned_target_points);
+
+	//std::vector<float> source_bbox = { source_max_point[0] - source_min_point[0],
+	//								   source_max_point[1] - source_min_point[1],
+	//								   source_max_point[2] - source_min_point[2] };
+
+	//std::vector<float> target_bbox = { target_max_point[0] - target_min_point[0],
+	//								   target_max_point[1] - target_min_point[1],
+	//								   target_max_point[2] - target_min_point[2] };
+
+	//std::vector<std::vector<float>> scale_matrix = { {target_bbox[0] / source_bbox[0],0.0, 0.0},
+	//												 {0.0, target_bbox[1] / source_bbox[1],0.0},
+	//												 {0.0, 0.0, target_bbox[2] / source_bbox[2] } };
+
+
+	//auto pre_aligned_source_points_scaled = getPointsDotMatrix(pre_aligned_source_points, scale_matrix);
+
+
+	////两个点云的主轴方向，有可能出现反向的情况，需要对其进行处理
+
+
+
+	//std::vector<Eigen::Vector3d> points;
+	//for (int i = 0; i < pre_aligned_target_points.size() / 3; i++)
+	//{
+	//	double curX = pre_aligned_target_points[i * 3 + 0];
+	//	double curY = pre_aligned_target_points[i * 3 + 1];
+	//	double curZ = pre_aligned_target_points[i * 3 + 2];
+	//	points.push_back(Eigen::Vector3d(curX, curY, curZ));
+	//}
+	//open3d::geometry::PointCloud point_cloud(points);
+	//open3d::geometry::KDTreeFlann  kd_tree(point_cloud);
+
+	//std::vector<int> cur_indices;
+	//std::vector<double> cur_distance;
+	//double all_distance[4] = { 0.0 };
+	//for (int i = 0; i < R.size(); i++)
+	//{
+	//	auto curR = R[i];
+	//	double cur_distance_sum = 0.0;
+	//	auto cur_points = getPointsDotMatrix(pre_aligned_source_points, curR);
+	//	for (int j = 0; j < cur_points.size() / 3; j++)
+	//	{
+	//		double curX = cur_points[j * 3 + 0];
+	//		double curY = cur_points[j * 3 + 1];
+	//		double curZ = cur_points[j * 3 + 2];
+	//		Eigen::Vector3d query_point(curX, curY, curZ);
+	//		kd_tree.SearchKNN(query_point, 1, cur_indices, cur_distance);
+	//
+	//		cur_distance_sum += sqrt(cur_distance[0]);
+	//	}
+	//	all_distance[i] = cur_distance_sum;
+	//}
+
+	//int min_index = 0;
+	//auto min_distance = all_distance[min_index];
+	//for (int i = 1; i < 4; i++)
+	//{
+	//	if (min_distance > all_distance[i])
+	//	{
+	//		min_index = i;
+	//		min_distance = all_distance[i];
+	//	}
+	//}
+
 
 	auto pre_aligned_source_points = getPointsDotMatrix(source_points_decenter, source_eigen_vectors);
 	auto pre_aligned_target_points = getPointsDotMatrix(target_points_decenter, target_eigen_vectors);
 
-	/*auto source_points_actors = createPointsActor(pre_aligned_source_points, 0.3, 1.0, "yellow");
-	auto target_points_actors = createPointsActor(pre_aligned_target_points, 0.3, 1.0, "red");
-	std::vector<vtkSmartPointer<vtkActor>> all_actors;
-	all_actors.insert(all_actors.end(), source_points_actors.begin(), source_points_actors.end());
-	all_actors.insert(all_actors.end(), target_points_actors.begin(), target_points_actors.end());
-	showActors(all_actors);
-*/
-
-
-
-
-	auto source_max_point = getTheMaxAxisPoint(pre_aligned_source_points);
-	auto source_min_point = getTheMinAxisPoint(pre_aligned_source_points);
-	
-	auto target_max_point = getTheMaxAxisPoint(pre_aligned_target_points);
-	auto target_min_point = getTheMinAxisPoint(pre_aligned_target_points);
-
-	std::vector<float> source_bbox = { source_max_point[0] - source_min_point[0],
-									   source_max_point[1] - source_min_point[1],
-									   source_max_point[2] - source_min_point[2] };
-
-	std::vector<float> target_bbox = { target_max_point[0] - target_min_point[0],
-									   target_max_point[1] - target_min_point[1],
-									   target_max_point[2] - target_min_point[2] };
-
-	std::vector<std::vector<float>> scale_matrix = { {target_bbox[0] / source_bbox[0],0.0, 0.0},
-													 {0.0, target_bbox[1] / source_bbox[1],0.0},
-													 {0.0, 0.0, target_bbox[2] / source_bbox[2] } };
-
-
-	auto pre_aligned_source_points_scaled = getPointsDotMatrix(pre_aligned_source_points, scale_matrix);
-
-
-	//两个点云的主轴方向，有可能出现反向的情况，需要对其进行处理
-	std::vector<std::vector<float>> R0 = { {1.0, 0.0, 0.0},{0.0, 1.0, 0.0,},{0.0, 0.0, 1.0} };
-	std::vector<std::vector<float>> R1 = { {1.0, 0.0, 0.0},{0.0, -1.0, 0.0,},{0.0, 0.0, -1.0} };
-	std::vector<std::vector<float>> R2 = { {-1.0, 0.0, 0.0},{0.0, -1.0, 0.0,},{0.0, 0.0, 1.0} };
-	std::vector<std::vector<float>> R3 = { {-1.0, 0.0, 0.0},{0.0, 1.0, 0.0,},{0.0, 0.0, -1.0} };
-	std::vector<std::vector<std::vector<float>>> R = { R0, R1, R2, R3 };
+	//auto source_points_actors = createPointsActor(pre_aligned_source_points, 0.3, 1.0, "yellow");
+	//auto target_points_actors = createPointsActor(pre_aligned_target_points, 0.3, 1.0, "red");
+	//std::vector<vtkSmartPointer<vtkActor>> all_actors;
+	//all_actors.insert(all_actors.end(), source_points_actors.begin(), source_points_actors.end());
+	//all_actors.insert(all_actors.end(), target_points_actors.begin(), target_points_actors.end());
+	//showActors(all_actors);
 
 	
-	std::vector<Eigen::Vector3d> points;
-	for (int i = 0; i < pre_aligned_target_points.size() / 3; i++)
-	{
-		double curX = pre_aligned_target_points[i * 3 + 0];
-		double curY = pre_aligned_target_points[i * 3 + 1];
-		double curZ = pre_aligned_target_points[i * 3 + 2];
-		points.push_back(Eigen::Vector3d(curX, curY, curZ));
-	}
-	open3d::geometry::PointCloud point_cloud(points);
-	open3d::geometry::KDTreeFlann  kd_tree(point_cloud);
 
-	std::vector<int> cur_indices;
-	std::vector<double> cur_distance;
-	double all_distance[4] = { 0.0 };
-	for (int i = 0; i < R.size(); i++)
-	{
-		auto curR = R[i];
-		double cur_distance_sum = 0.0;
-		auto cur_points = getPointsDotMatrix(pre_aligned_source_points, curR);
-		for (int j = 0; j < cur_points.size() / 3; j++)
-		{
-			double curX = cur_points[j * 3 + 0];
-			double curY = cur_points[j * 3 + 1];
-			double curZ = cur_points[j * 3 + 2];
-			Eigen::Vector3d query_point(curX, curY, curZ);
-			kd_tree.SearchKNN(query_point, 1, cur_indices, cur_distance);
-	
-			cur_distance_sum += sqrt(cur_distance[0]);
-		}
-		all_distance[i] = cur_distance_sum;
-	}
 
-	int min_index = 0;
-	auto min_distance = all_distance[min_index];
-	for (int i = 1; i < 4; i++)
-	{
-		if (min_distance > all_distance[i])
-		{
-			min_index = i;
-			min_distance = all_distance[i];
-		}
-	}
-	auto trans = R[min_index];
 	/*std::cout << "source center:" << source_center[0] << "," << source_center[1] << "," << source_center[2] << std::endl << std::endl;
 	std::cout << "target center:" << target_center[0] << "," << target_center[1] << "," << target_center[2] << std::endl << std::endl;*/
 
@@ -1598,6 +2040,10 @@ vtkSmartPointer<vtkMatrix4x4> preAlignedTwoPointClouds(const std::vector<float>&
 												{trans[1][0], trans[1][1], trans[1][2], 0.0},
 												{trans[2][0], trans[2][1], trans[2][2], 0.0},
 												{0.0, 0.0, 0.0, 1.0}};
+	//std::vector<std::vector<float>> matrix3 = { {1.0, 0.0, 0.0, 0.0},
+	//											{0.0, 1.0, 0.0, 0.0},
+	//											{0.0, 0.0, 1.0, 0.0},
+	//											{0.0, 0.0, 0.0, 1.0} };
 	/*std::cout << "\nMatrix3:" << std::endl;
 	printMatrix(matrix3);
 */
@@ -1670,9 +2116,9 @@ void vectorPointsDotvtkMatrix4x4(const std::vector<float>& points, const vtkSmar
 		auto curX = points[i * 3 + 0];
 		auto curY = points[i * 3 + 1];
 		auto curZ = points[i * 3 + 2];
-		for (int i = 0; i < 3; i++)
+		for (int j = 0; j < 3; j++)
 		{
-			double cur_data = data[i * 4 + 0] * curX + data[i * 4 + 1] * curY + data[i * 4 + 2] * curZ + data[i * 4 + 3] * 1.0;
+			double cur_data = data[j * 4 + 0] * curX + data[j * 4 + 1] * curY + data[j * 4 + 2] * curZ + data[j * 4 + 3] * 1.0;
 			points_new.push_back(float(cur_data));
 		}
 	}
@@ -1733,14 +2179,14 @@ void registrationPolydata(const std::string& label_name, const std::string& temp
 	//source_transform_filter1->SetInputData(source_polydata);
 	//source_transform_filter1->Update();
 
-	//auto source_transform2 = vtkSmartPointer<vtkTransform>::New();
-	//source_transform2->SetMatrix(source_vtk_matrix);
+	/*auto source_transform2 = vtkSmartPointer<vtkTransform>::New();
+	source_transform2->SetMatrix(source_vtk_matrix);
 
-	//auto source_transform_filter2 = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
-	//source_transform_filter2->SetTransform(source_transform2);
-	//source_transform_filter2->SetInputData(source_transform_filter1->GetOutput());
-	//source_transform_filter2->Update();
-
+	auto source_transform_filter2 = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+	source_transform_filter2->SetTransform(source_transform2);
+	source_transform_filter2->SetInputData(source_transform_filter1->GetOutput());
+	source_transform_filter2->Update();
+*/
 	/*auto source_transform3 = vtkSmartPointer<vtkTransform>::New();
 	source_transform3->Translate(source_center[0], source_center[1], source_center[2]);
 	auto source_transform_filter3 = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
@@ -1775,6 +2221,8 @@ void registrationPolydata(const std::string& label_name, const std::string& temp
 
 
 	//auto target_main_vector_actor = createLineActorByNormal(target_center, target_pca_vectors[0], 100.0, 4, "red");
+
+
 
 
 	auto pre_aligned_transform = vtkSmartPointer<vtkTransform>::New();
@@ -1820,21 +2268,21 @@ void registrationPolydata(const std::string& label_name, const std::string& temp
 	}
 
 */
-	//auto source_actor = createActorFromPolyData(source_polydata, "red", 0.9);
-	//auto pre_aligned_source_actor = createActorFromPolyData(icp_trans_form_filter->GetOutput(), "yellow", 0.8);
+	auto source_actor = createActorFromPolyData(source_polydata, "red", 0.9);
+	auto pre_aligned_source_actor = createActorFromPolyData(icp_trans_form_filter->GetOutput(), "yellow", 0.8);
 
-	//auto target_actor = createActorFromPolyData(target_polydata, "Cornsilk", 0.9);
-	//auto top_points_actors = createPointsActor(top_points, 0.3, 1.0, "red");
-	//auto left_points_actors = createPointsActor(left_points, 0.3, 1.0, "green");
-	//auto right_points_actors = createPointsActor(right_points, 0.3, 1.0, "blue");
+	auto target_actor = createActorFromPolyData(target_polydata, "Cornsilk", 0.9);
+	auto top_points_actors = createPointsActor(top_points, 0.3, 1.0, "red");
+	auto left_points_actors = createPointsActor(left_points, 0.3, 1.0, "green");
+	auto right_points_actors = createPointsActor(right_points, 0.3, 1.0, "blue");
 
-	//std::vector<vtkSmartPointer<vtkActor>> all_actors;
-	//all_actors.push_back(target_actor);
-	//all_actors.push_back(pre_aligned_source_actor);
-	//all_actors.insert(all_actors.end(), top_points_actors.begin(), top_points_actors.end());
-	//all_actors.insert(all_actors.end(), left_points_actors.begin(), left_points_actors.end());
-	//all_actors.insert(all_actors.end(), right_points_actors.begin(), right_points_actors.end());
-	//showActors(all_actors);
+	std::vector<vtkSmartPointer<vtkActor>> all_actors;
+	all_actors.push_back(target_actor);
+	all_actors.push_back(pre_aligned_source_actor);
+	all_actors.insert(all_actors.end(), top_points_actors.begin(), top_points_actors.end());
+	all_actors.insert(all_actors.end(), left_points_actors.begin(), left_points_actors.end());
+	all_actors.insert(all_actors.end(), right_points_actors.begin(), right_points_actors.end());
+	showActors(all_actors);
 
 
 

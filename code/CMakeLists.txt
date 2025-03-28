@@ -1,8 +1,9 @@
-cmake_minimum_required(VERSION 3.12)
+﻿cmake_minimum_required(VERSION 3.12)
 
 project(SpinePointCloudSeg)
 
 set(CMAKE_CXX_STANDARD 11)
+add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 
 if(NOT ONNXRUNTIME_ROOTDIR)
   if(WIN32)

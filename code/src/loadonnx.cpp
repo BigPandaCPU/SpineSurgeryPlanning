@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 #include <iostream>
 #include <vector>
 #include <fstream>
@@ -50,8 +50,8 @@ std::vector<int> classfier(std::vector<float>& points, bool use_cuda)
 	
 	//const wchar_t* model_path = L"checkpoints/best_model.onnx";
 	//Ort::Session session(env, model_path, session_options);
-	Ort::AllocatorWithDefaultOptions allocator;
-	size_t num_input_nodes = session.GetInputCount();
+	//Ort::AllocatorWithDefaultOptions allocator;
+	//size_t num_input_nodes = session.GetInputCount();
 
 	
 	//std::vector<const char*> output_node_names = { "274"};
@@ -99,8 +99,8 @@ std::vector<int> classfier(std::vector<float>& points, bool use_cuda)
 			tmp[j] = output[i * CLASS_NUM + j];
 		}
 		
-		int size = sizeof(tmp) / sizeof(tmp[0]); // ¼ÆËãÊı×é´óĞ¡
-		auto max_it = std::max_element(tmp, tmp + size); // ²éÕÒ×î´óÖµ
+		int size = sizeof(tmp) / sizeof(tmp[0]); // è®¡ç®—æ•°ç»„å¤§å°
+		auto max_it = std::max_element(tmp, tmp + size); // æŸ¥æ‰¾æœ€å¤§å€¼
 		int predict_label = std::distance(tmp, max_it);
 		output_label.push_back(predict_label);
 	}
