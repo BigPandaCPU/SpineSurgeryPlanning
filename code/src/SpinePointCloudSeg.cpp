@@ -62,7 +62,7 @@ SpinePointCloudSeg::SpinePointCloudSeg(const string& model_dir, bool use_cuda)
 	m_session_options = new Ort::SessionOptions;
 	m_session_options->SetIntraOpNumThreads(1);
 	m_session_options->SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
-	string model_file = model_dir + "/best_model.onnx";
+	string model_file = model_dir + "/best_model_cpu.onnx";
 
 	wchar_t* model_path = ConvertStringToWchar(model_file);
 
