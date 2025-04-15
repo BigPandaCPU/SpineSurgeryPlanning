@@ -17,6 +17,9 @@
 
 ## 导出模型文件,运行下面脚本
     python pth2onnx.py
+## 文件夹说明
+    code_c：文件夹下是C版的椎弓根螺钉通道规划
+    code_cpp：文件夹下是C++版的椎弓根螺钉通道规划
 
 ## 椎弓根螺钉通道规划
     由三个类实现，分别为SpinePointCloudSeg、SpineRegistrationICP和PedicleSurgeryPlanning。
@@ -32,3 +35,24 @@
 
 ### 方法异同：
     两种方法主要是获取特征点的方式不同，后面的规划是相同的。
+
+### 粗配准方法对比
+    两种粗配准方法：
+#### 1.基于PCA的粗配准方法(点云距离)：
+    原理：通过计算点云的PCA轴，将PCA轴对齐，实现粗配准。
+    优点：考虑了缩放，针对相似形状（体积大小存在差异），有较好的粗配准效果。
+    不足：无法兼容局部配准的情况
+    用时：在单椎体上测试，单个配准用时在0.4s左右
+![image](png/pca1.png)
+![image](png/pca2.png)
+
+
+#### 2.基于open3d的Fast Global Registration方法(点云特征匹配)：
+    原理：通过计算点的特征，进行配对，然后非线性优化，得到最终的配对点云，再计算配对点云。
+    优点：通过特征提取，对局部配准也有较好的效果。
+    不足：没考虑缩放情况，对有相似形（体积大小不同的），配准结果不稳定。
+    用时：在单椎体上测试，单个配准用时0.1~1.0s不等
+![image](png/open3d1.png)
+![image](png/open3d2.png)
+![image](png/open3d_fgr.png)
+![image](png/error1.png)

@@ -1,8 +1,11 @@
 /code/build/
-/code/pointnet/checkpoints/
+/code/pointnet/checkpoints_v1/
 .idea
 /code/__pycache__
 /code/pointnet/__pycache__
 
 /Release_CPU/
 /Release_GPU/
+/code/pointnet/checkpoints_v2/
+/code_cpp/build/
+/code_c/build/
