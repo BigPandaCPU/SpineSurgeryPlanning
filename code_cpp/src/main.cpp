@@ -19,7 +19,7 @@ bool fileExists(const std::string &file_name)
 }
 
 
-int main2(int argc, char* argv[])
+int main(int argc, char* argv[])
 {
 	int status;
 	//assert(argc >= 3);
@@ -121,8 +121,8 @@ int main2(int argc, char* argv[])
 		PedicleSurgeryPlanning* pedicle_plan = new PedicleSurgeryPlanning(spine_poly_data, spine_top_points, spine_left_points, spine_right_points);
 		pedicle_plan->Planning();
 		pedicle_plan->CreateFinalActors();
-		//pedicle_plan->Show();
-		//pedicle_plan->SaveSpineSurgeryPlanning2Png(save_png_file);
+		pedicle_plan->ShowPlanResult();
+		pedicle_plan->SaveSpineSurgeryPlanning2Png(save_png_file);
 		delete pedicle_plan;
 
 		//

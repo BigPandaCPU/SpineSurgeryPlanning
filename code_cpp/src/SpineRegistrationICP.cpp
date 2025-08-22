@@ -54,10 +54,10 @@ Date:2025.03.28
 void SpineRegistrationICP::Registration(bool prealigned_use_icp)
 {
 	clock_t start1 = clock();
-	//PreAlignedTwoPointClouds(prealigned_use_icp);
+	PreAlignedTwoPointClouds(prealigned_use_icp);
 	clock_t start2 = clock();
 
-	PreAlignedTwoPointCloudsOpen3d();
+	/*PreAlignedTwoPointCloudsOpen3d();*/
 	clock_t end = clock();
 	double duration1 = double(start2 - start1) / CLOCKS_PER_SEC;
 	cout << "prealigned PCA used: " << duration1 << endl;

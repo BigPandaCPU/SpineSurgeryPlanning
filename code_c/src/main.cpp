@@ -3,12 +3,12 @@ using namespace std;
 int main()
 {
 	string source_ply_file = 
-		"D:/project/PyProject_tmp/Fast-Global-Registration-main/dataset/pairwise_noise_xyz_level_01_01_rot_05/Depth_0000.ply";
+		"D:/project/PyProject_tmp/Fast-Global-Registration-main/dataset/spine/source_24_bak.ply";
 	string target_ply_file = 
-		"D:/project/PyProject_tmp/Fast-Global-Registration-main/dataset/pairwise_noise_xyz_level_01_01_rot_05/Depth_0001.ply";
+		"D:/project/PyProject_tmp/Fast-Global-Registration-main/dataset/spine/target_24.ply";
 	
-	auto source_points_eigen = getPointsFromPLY(source_ply_file, 1500);
-	auto target_points_eigen = getPointsFromPLY(target_ply_file, 1500);
+	auto source_points_eigen = getPointsFromPLY(source_ply_file, 1000);
+	auto target_points_eigen = getPointsFromPLY(target_ply_file, 1000);
 
 	vector<float> source_points_vector = matrixToVector(source_points_eigen);
 	vector<float> target_points_vector = matrixToVector(target_points_eigen);
@@ -23,10 +23,11 @@ int main()
 
 	vector<float> source_points_new;
 	vectorPointsDotvtkMatrix4x4(source_points_vector, pre_matrix, source_points_new);
-	auto source_points_actors = createPointsActor(source_points_vector, 0.01, 0.5, "red");
-	auto source_points_new_actors = createPointsActor(source_points_new, 0.01, 0.5, "green");
-	auto target_points_actors = createPointsActor(target_points_vector, 0.01, 0.5, "yellow");
-	vector<vtkSmartPointer<vtkActor>> all_actors = source_points_actors;
+	auto source_points_actors = createPointsActor(source_points_vector, 1.0, 0.5, "red");
+	auto source_points_new_actors = createPointsActor(source_points_new, 1.0, 0.5, "red");
+	auto target_points_actors = createPointsActor(target_points_vector, 1.0, 0.5, "LightSteelBlue");
+	vector<vtkSmartPointer<vtkActor>> all_actors;// = source_points_actors;
+	std::cout << "source points num:" << source_points_actors.size() << std::endl;
 	all_actors.insert(all_actors.begin(), source_points_new_actors.begin(), source_points_new_actors.end());
 	all_actors.insert(all_actors.begin(), target_points_actors.begin(), target_points_actors.end());
 	showActors(all_actors, "show result");
