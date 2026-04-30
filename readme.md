@@ -1,10 +1,7 @@
 # 将pytorch的.pth文件转换成 onnx文件
 
 ## 将PointNet++的模型文件转成onnx的时候出错
-    
     导出失败
-![image](png/pointnet22onnx_error.png)
-
 ## 将PointNet的模型文件转成onnx，成功了
 
 ## 完成基于C++实现的脊柱椎弓根通道规划
